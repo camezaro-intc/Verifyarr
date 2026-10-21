@@ -26,7 +26,10 @@ __pycache__/
 build/
 dist/
 *.zip
+*.tar.gz
+*.exe
 verifyarr.spec
+installer/
 .venv/
 venv/
 .pytest_cache/

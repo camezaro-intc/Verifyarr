@@ -11,6 +11,8 @@ if exist "%SCRIPT_DIR%verifyarr.exe" (
     set "APP_DIR=%SCRIPT_DIR%"
 ) else if exist "%SCRIPT_DIR%..\..\verifyarr.exe" (
     for %%I in ("%SCRIPT_DIR%..\..") do set "APP_DIR=%%~fI\"
+) else if exist "C:\Verifyarr\verifyarr.exe" (
+    set "APP_DIR=C:\Verifyarr\"
 ) else (
     for %%I in ("%SCRIPT_DIR%..\..") do set "APP_DIR=%%~fI\"
 )
@@ -47,4 +49,3 @@ if %errorLevel% neq 0 (
 )
 
 endlocal
-

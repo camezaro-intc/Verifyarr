@@ -1,0 +1,16 @@
+[Unit]
+Description=Verifyarr Media Verification Service
+After=network.target
+
+[Service]
+Type=simple
+User=verifyarr
+Group=verifyarr
+WorkingDirectory=/opt/verifyarr
+ExecStart=/opt/verifyarr/verifyarr
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

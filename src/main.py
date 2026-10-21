@@ -25,7 +25,17 @@ from src.services.verifier import Verifier
 
 logger = logging.getLogger("verifyarr")
 
-TEMPLATE_DIR = Path(__file__).parent / "templates"
+
+def _resolve_template_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        for candidate in (meipass / "src" / "templates", meipass / "templates"):
+            if candidate.is_dir():
+                return candidate
+    return Path(__file__).parent / "templates"
+
+
+TEMPLATE_DIR = _resolve_template_dir()
 DASHBOARD_LIMIT = 50
 
 

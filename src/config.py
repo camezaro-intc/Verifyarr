@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -159,7 +160,22 @@ class Settings(BaseSettings):
 
 
 def get_config_path() -> Path:
-    return Path(os.environ.get(CONFIG_ENV_VAR, DEFAULT_CONFIG_FILE)).expanduser()
+    explicit = os.environ.get(CONFIG_ENV_VAR)
+    if explicit:
+        return Path(explicit).expanduser()
+    cwd_candidate = Path(DEFAULT_CONFIG_FILE).expanduser()
+    if cwd_candidate.is_file() or not getattr(sys, "frozen", False):
+        return cwd_candidate
+    exe_dir = Path(sys.executable).resolve().parent
+    exe_candidate = exe_dir / DEFAULT_CONFIG_FILE
+    if not exe_candidate.is_file():
+        meipass = Path(getattr(sys, "_MEIPASS", exe_dir))
+        for example in (exe_dir / "config.example.yaml", meipass / "config.example.yaml"):
+            if example.is_file():
+                shutil.copyfile(example, exe_candidate)
+                logger.info("Created default %s from %s", exe_candidate, example)
+                break
+    return exe_candidate
 
 
 def load_settings() -> Settings:

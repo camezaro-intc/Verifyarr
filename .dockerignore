@@ -23,6 +23,10 @@ logs/
 # Python artifacts
 __pycache__/
 *.py[cod]
+build/
+dist/
+*.zip
+verifyarr.spec
 .venv/
 venv/
 .pytest_cache/

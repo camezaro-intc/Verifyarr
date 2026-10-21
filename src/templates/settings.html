@@ -1,118 +1,265 @@
 {% extends "base.html" %}
 {% block title %}Verifyarr — Settings{% endblock %}
 {% block extra_css %}
-    .settings-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
-                       gap: 12px; margin-bottom: 20px; }
-    .settings-header h2 { margin: 0; font-size: 18px; }
-    .settings-header .sub { color: var(--muted); font-size: 12px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; margin-bottom: 20px; }
-    .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
-    .card.full-width { grid-column: 1 / -1; }
-    .card h3 { margin: 0 0 6px; font-size: 15px; color: var(--text); display: flex; align-items: center; justify-content: space-between; }
-    .card p.desc { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
-    .field { margin-bottom: 14px; }
+    :root {
+      --bg: #0f172a; --panel: #1e293b; --panel-2: #0f172a; --border: #334155;
+      --text: #f8fafc; --muted: #94a3b8; --accent: #3b82f6; --accent-hover: #2563eb;
+      --green: #10b981; --red: #ef4444; --amber: #f59e0b;
+    }
+    .settings-wrapper { max-width: 1200px; margin: 0 auto; padding-bottom: 80px; }
+    .settings-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; }
+    .settings-top h2 { margin: 0; font-size: 22px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 10px; }
+    .settings-top .sub { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+
+    /* Pill-style horizontal tabs */
+    .tabs-nav {
+      display: flex; gap: 8px; flex-wrap: wrap; padding: 6px; background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--border); border-radius: 12px; margin-bottom: 24px;
+      backdrop-filter: blur(8px);
+    }
+    .tab-btn {
+      display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 8px;
+      background: transparent; color: var(--muted); border: 1px solid transparent;
+      font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s ease;
+    }
+    .tab-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; flex-shrink: 0; }
+    .tab-btn:hover { color: var(--text); background: rgba(51, 65, 85, 0.5); }
+    .tab-btn.active {
+      color: #fff; background: var(--accent); border-color: var(--accent);
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+    }
+
+    /* Tab panels */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeIn .2s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Form and card styling */
+    .section-card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    }
+    .section-card h3 {
+      margin: 0 0 6px; font-size: 16px; font-weight: 600; color: var(--text);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .section-card p.desc { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    /* Dry-Run alert banner */
+    .dry-run-callout {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
+      padding: 16px 20px; border-radius: 10px; margin-bottom: 24px;
+      border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08);
+    }
+    .dry-run-info { display: flex; gap: 14px; align-items: flex-start; }
+    .dry-run-icon {
+      width: 24px; height: 24px; color: var(--amber); flex-shrink: 0; margin-top: 2px;
+      stroke: currentColor; fill: none; stroke-width: 2;
+    }
+    .dry-run-text b { display: block; font-size: 14px; color: #fbbf24; margin-bottom: 2px; }
+    .dry-run-text span { color: #fde68a; font-size: 12px; line-height: 1.4; display: block; }
+
+    /* Input layout & controls */
+    .form-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-bottom: 16px; }
+    .field { margin-bottom: 16px; }
     .field:last-child { margin-bottom: 0; }
-    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
-    .field small { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
+    .field label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .field small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; line-height: 1.4; }
     .field input[type="text"],
     .field input[type="url"],
     .field input[type="password"],
     .field input[type="number"],
     .mapping-input {
-      width: 100%; padding: 8px 11px; border-radius: 6px; border: 1px solid var(--border);
-      background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px;
+      width: 100%; padding: 0.65rem 0.85rem; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--panel-2); color: var(--text); font: inherit; font-size: 13px; transition: border-color .15s;
     }
-    .field input:focus, .mapping-input:focus { outline: none; border-color: var(--accent); }
-    .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .toggle-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-                  padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
-                  background: var(--panel-2); margin-bottom: 12px; }
-    .toggle-row .toggle-text b { display: block; font-size: 13px; }
+    .field input:focus, .mapping-input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+
+    /* Password input with toggle button */
+    .input-with-action { position: relative; display: flex; align-items: center; }
+    .input-with-action input { padding-right: 44px; }
+    .action-inline-btn {
+      position: absolute; right: 8px; background: transparent; border: 0; color: var(--muted);
+      cursor: pointer; padding: 6px; display: flex; align-items: center; justify-content: center;
+      border-radius: 6px;
+    }
+    .action-inline-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+    .action-inline-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; }
+
+    /* Switch controls */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 14px 18px; border: 1px solid var(--border); border-radius: 10px;
+      background: rgba(15, 23, 42, 0.6); margin-bottom: 14px;
+    }
+    .toggle-row .toggle-text b { display: block; font-size: 13px; font-weight: 600; color: var(--text); }
     .toggle-row .toggle-text span { color: var(--muted); font-size: 12px; }
-    .toggle-row.warn { border-color: rgba(243,156,18,.4); background: rgba(243,156,18,.06); }
-    .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; margin-top: 2px; }
+    .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
     .switch input { opacity: 0; width: 0; height: 0; }
-    .slider { position: absolute; cursor: pointer; inset: 0; background-color: #343b48;
-              transition: .2s; border-radius: 24px; }
-    .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
-                     background-color: #fff; transition: .2s; border-radius: 50%; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0; background-color: #334155;
+      transition: .2s; border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
+      background-color: #fff; transition: .2s; border-radius: 50%;
+    }
     input:checked + .slider { background-color: var(--accent); }
-    input:checked + .slider:before { transform: translateX(18px); }
-    .conn-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    /* Integration cards */
+    .integration-card {
+      border: 1px solid var(--border); border-radius: 10px; background: rgba(15, 23, 42, 0.5);
+      padding: 18px 20px; margin-bottom: 18px;
+    }
+    .integration-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+      border-bottom: 1px solid var(--border); padding-bottom: 12px;
+    }
+    .integration-brand { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+    .integration-brand .badge-tag {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(59, 130, 246, 0.15);
+      color: var(--accent); border: 1px solid rgba(59, 130, 246, 0.3); font-weight: 600;
+    }
+    .conn-bar { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
     .conn-status { font-size: 12px; font-weight: 600; }
     .conn-status.ok { color: var(--green); }
     .conn-status.err { color: var(--red); }
     .conn-status.wait { color: var(--amber); }
-    .service-block { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 14px; }
-    .service-block:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
-    table.mappings { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    table.mappings th, table.mappings td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
+
+    /* Dynamic table for path mappings */
+    table.mappings { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    table.mappings th, table.mappings td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
     table.mappings th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; background: var(--panel-2); }
-    .actions-bar { display: flex; justify-content: flex-end; gap: 12px; align-items: center;
-                   padding: 16px 20px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; }
-    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } .row-2 { grid-template-columns: 1fr; } }
+
+    /* Sticky Save Bar */
+    .sticky-save-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 900;
+      background: rgba(15, 23, 42, 0.92); border-top: 1px solid var(--border);
+      backdrop-filter: blur(12px); box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+      padding: 12px 28px;
+    }
+    .save-bar-inner {
+      max-width: 1200px; margin: 0 auto; display: flex; align-items: center;
+      justify-content: space-between; gap: 16px;
+    }
+    .save-bar-info { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+    .save-bar-info svg { width: 16px; height: 16px; color: var(--accent); stroke: currentColor; fill: none; stroke-width: 2; }
+    .save-bar-actions { display: flex; align-items: center; gap: 12px; }
+    button.btn-primary {
+      background: var(--accent); color: #fff; font-weight: 600; border: 1px solid var(--accent);
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35); padding: 8px 20px;
+    }
+    button.btn-primary:hover { background: var(--accent-hover); }
+
+    @media (max-width: 768px) {
+      .tabs-nav { flex-direction: column; }
+      .tab-btn { width: 100%; justify-content: flex-start; }
+      .save-bar-inner { flex-direction: column; align-items: stretch; }
+    }
 {% endblock %}
 
 {% block content %}
+<div class="settings-wrapper">
   <form id="settings-form" onsubmit="saveSettings(event)" novalidate>
-    <div class="settings-header">
+    <div class="settings-top">
       <div>
-        <h2>Configuration &amp; Integrations</h2>
-        <div class="sub">Persisted atomically to {{ config_path }} &bull; Hot-reloads immediately on save</div>
+        <h2>
+          <svg style="width:24px;height:24px;stroke:var(--accent);fill:none;stroke-width:2" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          Settings
+        </h2>
+        <div class="sub">{{ config_path }} &bull; Hot-reloads in memory on save</div>
       </div>
-      <button type="submit" class="btn-primary" id="save-btn-top">Save &amp; Apply Settings</button>
+      <button type="submit" class="btn-primary" id="save-btn-top">Save Changes</button>
     </div>
 
-    <div class="grid">
-      <!-- 1. Verification Rules -->
-      <section class="card">
-        <h3>1. Verification Rules</h3>
-        <p class="desc">Core runtime delta tolerances, concurrency throttling, and remediation safety gate.</p>
+    <!-- Category Tabs Navigation -->
+    <nav class="tabs-nav" role="tablist" aria-label="Settings Categories">
+      <button type="button" class="tab-btn active" data-tab="tab-verification" role="tab" aria-selected="true" onclick="switchTab('tab-verification')">
+        <svg viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+        Verification Engine
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-tiers" role="tab" aria-selected="false" onclick="switchTab('tab-tiers')">
+        <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+        Analysis Tiers
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-integrations" role="tab" aria-selected="false" onclick="switchTab('tab-integrations')">
+        <svg viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+        Integrations
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-notifications" role="tab" aria-selected="false" onclick="switchTab('tab-notifications')">
+        <svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+        Notifications
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-system" role="tab" aria-selected="false" onclick="switchTab('tab-system')">
+        <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+        System &amp; Binaries
+      </button>
+    </nav>
 
-        <div class="toggle-row warn">
-          <div class="toggle-text">
+    <!-- Tab 1: Verification Engine -->
+    <div id="tab-verification" class="tab-panel active" role="tabpanel">
+      <!-- Dry Run Alert Callout Box -->
+      <div class="dry-run-callout">
+        <div class="dry-run-info">
+          <svg class="dry-run-icon" viewBox="0 0 24 24">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+            <line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>
+          </svg>
+          <div class="dry-run-text">
             <b>Dry-Run Mode (Safe Observation)</b>
-            <span>When enabled, failed imports are logged to the dashboard as DRY_RUN without deleting or blocklisting files in Radarr/Sonarr. Disable to activate automated remediation.</span>
+            <span>When enabled, failed media files are logged to the database and dashboard as DRY_RUN without triggering automated deletion or blocklisting in Servarr. Toggle off to activate live automated remediation.</span>
           </div>
-          <label class="switch" title="Toggle Dry-Run Mode">
-            <input type="checkbox" id="dry_run" {% if settings.verification.dry_run %}checked{% endif %}>
-            <span class="slider"></span>
-          </label>
         </div>
+        <label class="switch" title="Toggle Dry-Run Mode">
+          <input type="checkbox" id="dry_run" {% if settings.verification.dry_run %}checked{% endif %}>
+          <span class="slider"></span>
+        </label>
+      </div>
 
-        <div class="row-2">
+      <section class="section-card">
+        <h3>Verification Engine</h3>
+        <p class="desc">Configure runtime tolerance delta, concurrent probing limits, and subprocess execution timeouts.</p>
+
+        <div class="form-grid-2">
           <div class="field">
-            <label for="runtime_delta_threshold_minutes">Runtime Delta Threshold (minutes)</label>
+            <label for="runtime_delta_threshold_minutes">Runtime Delta Threshold (Minutes)</label>
             <input type="number" id="runtime_delta_threshold_minutes" min="1" step="0.5" required
                    value="{{ settings.verification.runtime_delta_threshold_minutes }}">
-            <small>Max allowed difference between ffprobe duration and TMDB/TVDB runtime (min: 1, default: 15).</small>
+            <small>Maximum allowed discrepancy between probed ffprobe duration and theatrical/TVDB runtime metadata (minimum: 1, default: 15).</small>
           </div>
 
           <div class="field">
             <label for="max_concurrent_probes">Max Concurrent Probes</label>
             <input type="number" id="max_concurrent_probes" min="1" max="32" step="1" required
                    value="{{ settings.verification.max_concurrent_probes }}">
-            <small>Semaphore limit protecting disk I/O during season pack imports (default: 2).</small>
+            <small>Concurrency semaphore guarding disk I/O when processing large Sonarr season packs (default: 2).</small>
           </div>
         </div>
 
         <div class="field">
-          <label for="probe_timeout_seconds">Probe Timeout (seconds)</label>
+          <label for="probe_timeout_seconds">Probe Timeout (Seconds)</label>
           <input type="number" id="probe_timeout_seconds" min="1" step="1" required
                  value="{{ settings.verification.probe_timeout_seconds }}">
-          <small>Maximum execution time per ffprobe / OCR subprocess call (default: 120).</small>
+          <small>Maximum timeout per ffprobe / visual check subprocess before failing gracefully (default: 120).</small>
         </div>
       </section>
+    </div>
 
-      <!-- 2. Tiers & Visual Analysis -->
-      <section class="card">
-        <h3>2. Tiers &amp; Visual Analysis</h3>
-        <p class="desc">Multi-tier audio stream verification, ffmpeg freeze-frame trap detection, and Tesseract OCR title scanning.</p>
+    <!-- Tab 2: Analysis Tiers -->
+    <div id="tab-tiers" class="tab-panel" role="tabpanel">
+      <section class="section-card">
+        <h3>Analysis Tiers</h3>
+        <p class="desc">Fine-tune stream validation, freeze-frame loop detection, and OCR-based credit scanning.</p>
 
+        <!-- Tier 2 -->
         <div class="toggle-row">
           <div class="toggle-text">
             <b>Tier 2: Stream &amp; Audio Sanity Check</b>
-            <span>Verify audio track language matches original metadata and channel count matches release tags (5.1 / 7.1).</span>
+            <span>Validates that audio stream language matches metadata and channel layout matches advertised release tags (5.1 / 7.1).</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="enable_audio_sanity_check" {% if settings.verification.enable_audio_sanity_check %}checked{% endif %}>
@@ -120,10 +267,11 @@
           </label>
         </div>
 
+        <!-- Tier 3A -->
         <div class="toggle-row">
           <div class="toggle-text">
             <b>Tier 3A: Freeze-Frame &amp; Loop Detection</b>
-            <span>Scan sample window with ffmpeg freezedetect to catch padded static-screen fakes.</span>
+            <span>Inspects video sample windows with ffmpeg <code>freezedetect</code> to catch padded static loop video traps.</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="enable_freeze_detection" {% if settings.verification.enable_freeze_detection %}checked{% endif %}>
@@ -131,17 +279,18 @@
           </label>
         </div>
 
-        <div class="field">
+        <div class="field" style="margin-bottom: 20px;">
           <label for="freeze_threshold_percent">Freeze Threshold (%)</label>
           <input type="number" id="freeze_threshold_percent" min="0" max="100" step="1" required
                  value="{{ settings.verification.freeze_threshold_percent }}">
-          <small>Reject video if frozen frames exceed this percentage of the sampled window (default: 30%).</small>
+          <small>Rejects the file if static frames exceed this percentage of the sampled duration (default: 30%).</small>
         </div>
 
+        <!-- Tier 3B -->
         <div class="toggle-row">
           <div class="toggle-text">
             <b>Tier 3B: OCR Title Card &amp; Credit Check</b>
-            <span>Extract frames and run Tesseract OCR to detect mockbuster studio credits (e.g. The Asylum).</span>
+            <span>Extracts key video frames and executes Tesseract OCR to detect mockbuster studio production credits.</span>
           </div>
           <label class="switch">
             <input type="checkbox" id="enable_ocr_credit_check" {% if settings.verification.enable_ocr_credit_check %}checked{% endif %}>
@@ -150,37 +299,45 @@
         </div>
 
         <div class="field">
-          <label for="mockbuster_keywords">Mockbuster Blacklist Keywords (comma-separated)</label>
+          <label for="mockbuster_keywords">Mockbuster Keywords (Comma-Separated)</label>
           <input type="text" id="mockbuster_keywords"
                  value="{{ settings.verification.mockbuster_keywords | join(', ') }}">
+          <small>Keywords flagged during title/credit scanning (e.g. <code>The Asylum, Asylum Presents, Syfy Channel</code>).</small>
         </div>
       </section>
+    </div>
 
-      <!-- 3. Servarr Integrations -->
-      <section class="card">
-        <h3>3. Servarr Integrations</h3>
-        <p class="desc">Connect Radarr and Sonarr for metadata enrichment and automated file deletion, blocklisting, and re-search.</p>
+    <!-- Tab 3: Integrations -->
+    <div id="tab-integrations" class="tab-panel" role="tabpanel">
+      <section class="section-card">
+        <h3>Integrations</h3>
+        <p class="desc">Connect Radarr, Sonarr, and Jellyfin for metadata enrichment, automated blocklisting, and library refresh.</p>
 
-        <!-- Radarr -->
-        <div class="service-block">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <b>Radarr Integration</b>
-              <span>Enable movie verification and Radarr v3 API remediation.</span>
+        <!-- Radarr Card -->
+        <div class="integration-card">
+          <div class="integration-header">
+            <div class="integration-brand">
+              <span>Radarr</span>
+              <span class="badge-tag">Movies</span>
             </div>
-            <label class="switch">
+            <label class="switch" title="Enable Radarr">
               <input type="checkbox" id="radarr_enabled" {% if settings.radarr.enabled %}checked{% endif %}>
               <span class="slider"></span>
             </label>
           </div>
-          <div class="row-2">
+          <div class="form-grid-2">
             <div class="field">
               <label for="radarr_url">Radarr Base URL</label>
               <input type="url" id="radarr_url" placeholder="http://localhost:7878" value="{{ settings.radarr.url }}">
             </div>
             <div class="field">
               <label for="radarr_api_key">Radarr API Key</label>
-              <input type="text" id="radarr_api_key" placeholder="Radarr API Key" value="{{ settings.radarr.api_key }}">
+              <div class="input-with-action">
+                <input type="password" id="radarr_api_key" placeholder="API Key" value="{{ settings.radarr.api_key }}">
+                <button type="button" class="action-inline-btn" onclick="togglePasswordVisibility('radarr_api_key', this)" title="Show/Hide Key">
+                  <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
             </div>
           </div>
           <div class="conn-bar">
@@ -189,26 +346,31 @@
           </div>
         </div>
 
-        <!-- Sonarr -->
-        <div class="service-block">
-          <div class="toggle-row">
-            <div class="toggle-text">
-              <b>Sonarr Integration</b>
-              <span>Enable episode/season-pack verification and Sonarr v3 API remediation.</span>
+        <!-- Sonarr Card -->
+        <div class="integration-card">
+          <div class="integration-header">
+            <div class="integration-brand">
+              <span>Sonarr</span>
+              <span class="badge-tag">Series</span>
             </div>
-            <label class="switch">
+            <label class="switch" title="Enable Sonarr">
               <input type="checkbox" id="sonarr_enabled" {% if settings.sonarr.enabled %}checked{% endif %}>
               <span class="slider"></span>
             </label>
           </div>
-          <div class="row-2">
+          <div class="form-grid-2">
             <div class="field">
               <label for="sonarr_url">Sonarr Base URL</label>
               <input type="url" id="sonarr_url" placeholder="http://localhost:8989" value="{{ settings.sonarr.url }}">
             </div>
             <div class="field">
               <label for="sonarr_api_key">Sonarr API Key</label>
-              <input type="text" id="sonarr_api_key" placeholder="Sonarr API Key" value="{{ settings.sonarr.api_key }}">
+              <div class="input-with-action">
+                <input type="password" id="sonarr_api_key" placeholder="API Key" value="{{ settings.sonarr.api_key }}">
+                <button type="button" class="action-inline-btn" onclick="togglePasswordVisibility('sonarr_api_key', this)" title="Show/Hide Key">
+                  <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
             </div>
           </div>
           <div class="conn-bar">
@@ -216,76 +378,94 @@
             <span id="conn-sonarr" class="conn-status"></span>
           </div>
         </div>
-      </section>
 
-      <!-- 4. Media Server (Jellyfin) & External Binaries -->
-      <section class="card">
-        <h3>4. Media Server (Jellyfin) &amp; External Binaries</h3>
-        <p class="desc">Trigger library scans after verified imports and configure paths to ffprobe/ffmpeg binaries.</p>
-
-        <div class="toggle-row">
-          <div class="toggle-text">
-            <b>Jellyfin Library Refresh</b>
-            <span>Trigger a debounced Jellyfin library scan when imports pass verification.</span>
+        <!-- Jellyfin Card -->
+        <div class="integration-card" style="margin-bottom: 0;">
+          <div class="integration-header">
+            <div class="integration-brand">
+              <span>Jellyfin</span>
+              <span class="badge-tag">Media Server</span>
+            </div>
+            <label class="switch" title="Enable Jellyfin">
+              <input type="checkbox" id="jellyfin_enabled" {% if settings.jellyfin.enabled %}checked{% endif %}>
+              <span class="slider"></span>
+            </label>
           </div>
-          <label class="switch">
-            <input type="checkbox" id="jellyfin_enabled" {% if settings.jellyfin.enabled %}checked{% endif %}>
-            <span class="slider"></span>
-          </label>
-        </div>
-
-        <div class="row-2">
-          <div class="field">
-            <label for="jellyfin_url">Jellyfin Base URL</label>
-            <input type="url" id="jellyfin_url" placeholder="http://localhost:8096" value="{{ settings.jellyfin.url }}">
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="jellyfin_url">Jellyfin Base URL</label>
+              <input type="url" id="jellyfin_url" placeholder="http://localhost:8096" value="{{ settings.jellyfin.url }}">
+            </div>
+            <div class="field">
+              <label for="jellyfin_api_key">Jellyfin API Key</label>
+              <div class="input-with-action">
+                <input type="password" id="jellyfin_api_key" placeholder="API Key / Token" value="{{ settings.jellyfin.api_key }}">
+                <button type="button" class="action-inline-btn" onclick="togglePasswordVisibility('jellyfin_api_key', this)" title="Show/Hide Key">
+                  <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
+            </div>
           </div>
-          <div class="field">
-            <label for="jellyfin_api_key">Jellyfin API Key</label>
-            <input type="text" id="jellyfin_api_key" placeholder="Jellyfin API Token" value="{{ settings.jellyfin.api_key }}">
-          </div>
-        </div>
-        <div class="conn-bar" style="margin-bottom: 16px;">
-          <button type="button" onclick="testConnection('jellyfin', this)">Test Connection</button>
-          <span id="conn-jellyfin" class="conn-status"></span>
-        </div>
-
-        <div class="service-block">
-          <div class="field">
-            <label for="ffprobe_path">ffprobe Binary Path</label>
-            <input type="text" id="ffprobe_path" placeholder="Leave blank for PATH auto-detect (e.g. C:\Program Files\Jellyfin\Server\ffprobe.exe)"
-                   value="{{ settings.binaries.ffprobe_path }}">
-          </div>
-          <div class="field">
-            <label for="ffmpeg_path">ffmpeg Binary Path</label>
-            <input type="text" id="ffmpeg_path" placeholder="Leave blank for PATH auto-detect (e.g. C:\Program Files\Jellyfin\Server\ffmpeg.exe)"
-                   value="{{ settings.binaries.ffmpeg_path }}">
-          </div>
-          <div class="field">
-            <label for="tesseract_path">Tesseract Binary Path (Optional)</label>
-            <input type="text" id="tesseract_path" placeholder="Leave blank for PATH auto-detect"
-                   value="{{ settings.binaries.tesseract_path }}">
-          </div>
-          <div class="field">
-            <label for="discord_webhook_url">Discord Webhook URL (Optional)</label>
-            <input type="url" id="discord_webhook_url" placeholder="https://discord.com/api/webhooks/..."
-                   value="{{ settings.notifications.discord_webhook_url }}">
+          <div class="conn-bar">
+            <button type="button" onclick="testConnection('jellyfin', this)">Test Connection</button>
+            <span id="conn-jellyfin" class="conn-status"></span>
           </div>
         </div>
       </section>
+    </div>
 
-      <!-- 5. Path Mappings -->
-      <section class="card full-width">
+    <!-- Tab 4: Notifications -->
+    <div id="tab-notifications" class="tab-panel" role="tabpanel">
+      <section class="section-card">
+        <h3>Notifications</h3>
+        <p class="desc">Send instant failure alerts, mockbuster rejections, and probe error notifications to Discord.</p>
+
+        <div class="field">
+          <label for="discord_webhook_url">Discord Webhook URL</label>
+          <input type="url" id="discord_webhook_url" placeholder="https://discord.com/api/webhooks/..."
+                 value="{{ settings.notifications.discord_webhook_url }}">
+          <small>Leave blank to disable Discord notifications.</small>
+        </div>
+      </section>
+    </div>
+
+    <!-- Tab 5: System & Binaries -->
+    <div id="tab-system" class="tab-panel" role="tabpanel">
+      <section class="section-card">
+        <h3>System Binaries</h3>
+        <p class="desc">Paths to media probing utilities. Leave blank to automatically discover them on the system PATH.</p>
+
+        <div class="field">
+          <label for="ffprobe_path">ffprobe Executable Path</label>
+          <input type="text" id="ffprobe_path" placeholder="Leave blank for PATH discovery (e.g. C:\ffmpeg\bin\ffprobe.exe)"
+                 value="{{ settings.binaries.ffprobe_path }}">
+        </div>
+
+        <div class="field">
+          <label for="ffmpeg_path">ffmpeg Executable Path</label>
+          <input type="text" id="ffmpeg_path" placeholder="Leave blank for PATH discovery (e.g. C:\ffmpeg\bin\ffmpeg.exe)"
+                 value="{{ settings.binaries.ffmpeg_path }}">
+        </div>
+
+        <div class="field">
+          <label for="tesseract_path">Tesseract Executable Path (Optional for OCR)</label>
+          <input type="text" id="tesseract_path" placeholder="Leave blank for PATH discovery"
+                 value="{{ settings.binaries.tesseract_path }}">
+        </div>
+      </section>
+
+      <section class="section-card">
         <h3>
-          <span>5. Path Mappings</span>
+          <span>Path Mappings</span>
           <button type="button" onclick="addMappingRow('', '', false)">+ Add Path Mapping</button>
         </h3>
-        <p class="desc">Translate paths reported by Radarr/Sonarr (`from` / remote path) into local paths accessible by Verifyarr (`to` / local path).</p>
+        <p class="desc">Translate remote download paths sent by Servarr (e.g. Windows drive letters) to local paths accessible by Verifyarr.</p>
 
         <table class="mappings" id="path-mappings-table">
           <thead>
             <tr>
-              <th style="width: 42%;">From (Servarr Remote Path)</th>
-              <th style="width: 42%;">To (Verifyarr Local Path)</th>
+              <th style="width: 42%;">From (Remote Servarr Path)</th>
+              <th style="width: 42%;">To (Local Verifyarr Path)</th>
               <th style="width: 8%;">Regex</th>
               <th style="width: 8%;"></th>
             </tr>
@@ -304,15 +484,63 @@
       </section>
     </div>
 
-    <div class="actions-bar">
-      <button type="button" onclick="location.reload()">Discard Changes</button>
-      <button type="submit" class="btn-primary" id="save-btn-bottom">Save &amp; Apply Settings</button>
+    <!-- Sticky Persistent Save Bar -->
+    <div class="sticky-save-bar">
+      <div class="save-bar-inner">
+        <div class="save-bar-info">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>Changes are saved atomically and hot-reloaded into memory instantly.</span>
+        </div>
+        <div class="save-bar-actions">
+          <button type="button" onclick="location.reload()">Discard Changes</button>
+          <button type="submit" class="btn-primary" id="save-btn-bottom">Save Changes</button>
+        </div>
+      </div>
     </div>
   </form>
+</div>
 {% endblock %}
 
 {% block scripts %}
   <script>
+    // Tab switching logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        const isCurrent = btn.getAttribute('data-tab') === tabId;
+        btn.classList.toggle('active', isCurrent);
+        btn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
+      });
+      document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.toggle('active', panel.id === tabId);
+      });
+      if (history.replaceState) {
+        history.replaceState(null, null, '#' + tabId.replace('tab-', ''));
+      }
+    }
+
+    // Restore active tab from hash if present
+    document.addEventListener('DOMContentLoaded', () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash) {
+        const targetTab = 'tab-' + hash;
+        if (document.getElementById(targetTab)) {
+          switchTab(targetTab);
+        }
+      }
+    });
+
+    // Password visibility toggle
+    function togglePasswordVisibility(inputId, btn) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      btn.innerHTML = isPassword
+        ? '<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>'
+        : '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    }
+
+    // Dynamic path mappings
     function addMappingRow(fromPath = '', toPath = '', useRegex = false) {
       const tbody = document.getElementById('path-mappings-body');
       const tr = document.createElement('tr');
@@ -342,6 +570,7 @@
       return result;
     }
 
+    // Service connection tester
     async function testConnection(service, btn) {
       const urlEl = document.getElementById(service + '_url');
       const keyEl = document.getElementById(service + '_api_key');

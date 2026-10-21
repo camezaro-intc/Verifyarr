@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,35 +27,32 @@ class CommandResult:
     stderr: str
 
 
+def _sync_run_command(str_args: list[str], timeout: float) -> tuple[int, bytes, str]:
+    res = subprocess.run(  # noqa: UP022
+        str_args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    return res.returncode, res.stdout, res.stderr.decode("utf-8", errors="replace")
+
+
 async def run_command(args: Sequence[str | Path], timeout: float = 120) -> CommandResult:
-    """Run a subprocess without blocking the event loop; kill it if it exceeds ``timeout``."""
+    """Run a subprocess in a worker thread (avoids Windows SelectorEventLoop errors)."""
     str_args = [str(a) for a in args]
     logger.debug("Running: %s", " ".join(str_args))
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *str_args,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        returncode, stdout, stderr = await asyncio.to_thread(_sync_run_command, str_args, timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise ToolError(f"{Path(str_args[0]).name} timed out after {timeout:.0f}s") from exc
     except (FileNotFoundError, PermissionError) as exc:
         raise ToolError(f"Cannot execute {str_args[0]}: {exc}") from exc
 
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError as exc:
-        proc.kill()
-        await proc.wait()
-        raise ToolError(f"{Path(str_args[0]).name} timed out after {timeout:.0f}s") from exc
-    except asyncio.CancelledError:
-        proc.kill()
-        await proc.wait()
-        raise
-
     return CommandResult(
-        returncode=proc.returncode if proc.returncode is not None else -1,
+        returncode=returncode,
         stdout=stdout,
-        stderr=stderr.decode("utf-8", errors="replace"),
+        stderr=stderr,
     )
 
 

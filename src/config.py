@@ -33,6 +33,46 @@ DEFAULT_CONFIG_FILE = "config.yaml"
 BinaryName = Literal["ffmpeg", "ffprobe", "tesseract"]
 
 
+def normalize_path(path_str: str | None) -> str | None:
+    """Normalize file/folder paths to use forward slashes and strip extra whitespace."""
+    if not path_str or not isinstance(path_str, str):
+        return path_str
+    return path_str.replace("\\", "/").strip()
+
+
+def load_yaml_resilient(file_path: Path) -> dict[str, Any]:
+    """Read a YAML file and sanitize unescaped Windows paths before safe_load."""
+    if not file_path.is_file():
+        return {}
+    try:
+        raw_content = file_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.error("Could not read configuration file %s: %s", file_path, exc)
+        return {}
+
+    # Convert drive letters followed by single backslashes (e.g., C:\) to forward slashes
+    sanitized = re.sub(r"([A-Za-z]:)\\(?!\\)", r"\1/", raw_content)
+    # Convert any remaining single backslashes in path-like strings (e.g. \Program Files\...)
+    sanitized = re.sub(r"\\([A-Za-z0-9_.\- ])", r"/\1", sanitized)
+    try:
+        data = yaml.safe_load(sanitized)
+        return data if isinstance(data, dict) else {}
+    except yaml.YAMLError:
+        try:
+            data = yaml.safe_load(raw_content)
+            return data if isinstance(data, dict) else {}
+        except yaml.YAMLError as exc:
+            logger.error("Failed parsing YAML in %s: %s", file_path, exc)
+            return {}
+
+
+class ResilientYamlConfigSettingsSource(YamlConfigSettingsSource):
+    """Pydantic Settings source using resilient YAML loading to prevent Windows escape crashes."""
+
+    def _read_file(self, file_path: Path | Any) -> dict[str, Any]:
+        return load_yaml_resilient(Path(str(file_path)))
+
+
 class ServerConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -222,7 +262,7 @@ class Settings(BaseSettings):
         dotenv_settings: PydanticBaseSettingsSource,
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> tuple[PydanticBaseSettingsSource, ...]:
-        yaml_source = YamlConfigSettingsSource(
+        yaml_source = ResilientYamlConfigSettingsSource(
             settings_cls, yaml_file=get_config_path(), yaml_file_encoding="utf-8"
         )
         return (init_settings, env_settings, dotenv_settings, yaml_source, file_secret_settings)
@@ -328,11 +368,31 @@ CONFIG_PATH = Path(DEFAULT_CONFIG_FILE)
 
 def save_config_atomic(config_dict: dict[str, Any], target_path: Path) -> None:
     """Atomically write ``config_dict`` to ``target_path`` via a sibling ``.tmp`` file."""
+    import copy
+
     target_path = Path(target_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     temp_file = target_path.with_suffix(target_path.suffix + ".tmp")
+
+    cleaned_dict = copy.deepcopy(config_dict)
+    if "binaries" in cleaned_dict and isinstance(cleaned_dict["binaries"], dict):
+        for k in ("ffprobe_path", "ffmpeg_path", "tesseract_path"):
+            if k in cleaned_dict["binaries"] and isinstance(cleaned_dict["binaries"][k], str):
+                cleaned_dict["binaries"][k] = normalize_path(cleaned_dict["binaries"][k]) or ""
+    if "path_mappings" in cleaned_dict and isinstance(cleaned_dict["path_mappings"], list):
+        for m in cleaned_dict["path_mappings"]:
+            if isinstance(m, dict):
+                for k in ("remote_path", "local_path", "from", "to", "from_path", "to_path"):
+                    if k in m and isinstance(m[k], str):
+                        cleaned_val = normalize_path(m[k])
+                        if cleaned_val:
+                            # Preserve drive roots like C:/ and root /
+                            if not re.match(r"^[A-Za-z]:/$", cleaned_val) and cleaned_val != "/":
+                                cleaned_val = cleaned_val.rstrip("/")
+                        m[k] = cleaned_val or ""
+
     with open(temp_file, "w", encoding="utf-8") as f:
-        yaml.safe_dump(config_dict, f, sort_keys=False, indent=2, allow_unicode=True)
+        yaml.safe_dump(cleaned_dict, f, sort_keys=False, indent=2, allow_unicode=True)
     temp_file.replace(target_path)
 
 
@@ -350,4 +410,10 @@ def load_settings() -> Settings:
     path = get_config_path()
     if not path.is_file():
         logger.warning("Config file %s not found; using defaults and environment only", path)
-    return Settings()
+    try:
+        return Settings()
+    except Exception as exc:
+        logger.error(
+            "Failed to parse settings from %s (%s); falling back to default settings", path, exc
+        )
+        return Settings()

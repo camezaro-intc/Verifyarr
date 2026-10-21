@@ -244,12 +244,13 @@ def _get_system_drives() -> list[str]:
 @router.get("/api/v1/system/detect-binaries")
 def detect_binaries() -> dict[str, str | None]:
     """Auto-detect standard locations and system PATH for ffprobe, ffmpeg, and tesseract."""
+    from src.config import normalize_path
     from src.services.binary_resolver import resolve_binary
 
     result: dict[str, str | None] = {}
     for name in ("ffprobe", "ffmpeg", "tesseract"):
         resolved = resolve_binary(name)
-        result[name] = str(resolved) if resolved else None
+        result[name] = normalize_path(str(resolved)) if resolved else None
     return result
 
 

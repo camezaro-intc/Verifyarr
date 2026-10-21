@@ -1,156 +1,110 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-:: ============================================================================
-:: Verifyarr - Windows NSSM Service Installer (Standalone / Installer Package)
-:: ============================================================================
-
-set "SERVICE_NAME=Verifyarr"
-
-:: Check for non-interactive / silent execution flags
-set "NO_PAUSE="
-for %%A in (%*) do (
-    if /i "%%A"=="--no-pause" set "NO_PAUSE=1"
-    if /i "%%A"=="/no-pause" set "NO_PAUSE=1"
-    if /i "%%A"=="--silent" set "NO_PAUSE=1"
-    if /i "%%A"=="/silent" set "NO_PAUSE=1"
-)
-
-:: Resolve application root directory (supports running from root or scripts\windows\)
-set "SCRIPT_DIR=%~dp0"
-if exist "%SCRIPT_DIR%verifyarr.exe" (
-    set "APP_DIR=%SCRIPT_DIR%"
-) else if exist "%SCRIPT_DIR%..\..\verifyarr.exe" (
-    for %%I in ("%SCRIPT_DIR%..\..") do set "APP_DIR=%%~fI\"
-) else if exist "C:\Verifyarr\verifyarr.exe" (
-    set "APP_DIR=C:\Verifyarr\"
-) else (
-    for %%I in ("%SCRIPT_DIR%..\..") do set "APP_DIR=%%~fI\"
-)
-
-:: Trim trailing backslash for NSSM AppDirectory
-set "APP_DIR_CLEAN=%APP_DIR:~0,-1%"
-set "EXE_PATH=%APP_DIR%verifyarr.exe"
-
-echo ============================================================================
-echo  Installing %SERVICE_NAME% Windows Service
-echo  Application Directory: %APP_DIR_CLEAN%
-echo  Executable Path      : %EXE_PATH%
-echo ============================================================================
-
-:: Verify Administrator privileges
 net session >nul 2>&1
 if %errorLevel% neq 0 (
-    echo [ERROR] Administrator privileges are required to install a Windows service.
-    echo         Please right-click install-service.bat and select "Run as administrator".
-    if not defined NO_PAUSE pause
+    echo [ERROR] Administrator privileges required. Right-click and select "Run as administrator".
+    if "%~1" neq "--no-pause" pause
     exit /b 1
 )
 
-:: Locate or verify NSSM (Non-Sucking Service Manager)
-set "NSSM_CMD="
+cd /d "%~dp0"
+if exist "..\..\verifyarr.exe" cd ..\..
+set "APP_DIR=%CD%"
+set "APP_EXE=%APP_DIR%\verifyarr.exe"
 
-:: Check existing candidate executables and test if they actually run
-for %%C in ("%APP_DIR%nssm.exe" "%SCRIPT_DIR%nssm.exe" "C:\Verifyarr\nssm.exe" "C:\Bazarr\nssm.exe" "C:\Program Files\Jellyfin\Server\nssm.exe") do (
-    if not defined NSSM_CMD (
-        if exist "%%~fC" (
-            "%%~fC" version >nul 2>&1
-            if !errorLevel! equ 0 (
-                set "NSSM_CMD=%%~fC"
-                :: Ensure working binary is copied to APP_DIR if missing or broken there
-                if /i not "%%~fC"=="%APP_DIR%nssm.exe" (
-                    copy /Y "%%~fC" "%APP_DIR%nssm.exe" >nul 2>&1
-                )
-            )
-        )
-    )
-)
-
-if not defined NSSM_CMD (
-    where nssm >nul 2>&1
-    if !errorLevel! equ 0 (
-        nssm version >nul 2>&1
-        if !errorLevel! equ 0 set "NSSM_CMD=nssm"
-    )
-)
-
-:: If NSSM is still missing, attempt automated download via PowerShell
-if not defined NSSM_CMD (
-    echo [INFO] NSSM not found locally. Downloading NSSM 2.24 via PowerShell...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; " ^
-        "$zip = Join-Path $env:TEMP 'nssm-2.24.zip'; $extract = Join-Path $env:TEMP 'nssm_extracted'; " ^
-        "$urls = @('https://nssm.cc/release/nssm-2.24.zip', 'https://github.com/kirillkovalenko/nssm/releases/download/2.24/nssm-2.24.zip'); " ^
-        "$ok = $false; " ^
-        "foreach ($u in $urls) { try { Invoke-WebRequest -Uri $u -OutFile $zip -TimeoutSec 15; $ok = $true; break } catch {} }; " ^
-        "if ($ok) { Expand-Archive -Path $zip -DestinationPath $extract -Force; " ^
-        "Copy-Item (Join-Path $extract 'nssm-2.24\win64\nssm.exe') '%APP_DIR%nssm.exe' -Force; " ^
-        "Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue }" >nul 2>&1
-
-    if exist "%APP_DIR%nssm.exe" (
-        set "NSSM_CMD=%APP_DIR%nssm.exe"
-        echo [INFO] NSSM successfully downloaded to %APP_DIR%nssm.exe.
-    ) else (
-        echo [ERROR] NSSM could not be found or downloaded automatically.
-        echo         Please place nssm.exe into "%APP_DIR%" or install it via "winget install NSSM.NSSM".
-        if not defined NO_PAUSE pause
-        exit /b 1
-    )
-)
-
-:: Verify standalone executable exists
-if not exist "%EXE_PATH%" (
-    echo [ERROR] Could not find "%EXE_PATH%".
-    echo         Ensure this script is executed from an extracted Verifyarr standalone release.
-    if not defined NO_PAUSE pause
+if not exist "%APP_EXE%" (
+    echo [ERROR] Could not find verifyarr.exe in "%APP_DIR%"
+    if "%~1" neq "--no-pause" pause
     exit /b 1
 )
 
-:: Bootstrap config.yaml from config.example.yaml if missing
-if not exist "%APP_DIR%config.yaml" (
-    if exist "%APP_DIR%config.example.yaml" (
-        echo [INFO] Creating default config.yaml from config.example.yaml...
-        copy /Y "%APP_DIR%config.example.yaml" "%APP_DIR%config.yaml" >nul
+:: Locate or download NSSM
+set "NSSM_EXE="
+if exist "%APP_DIR%\nssm.exe" (
+    "%APP_DIR%\nssm.exe" version >nul 2>&1
+    if !errorLevel! equ 0 set "NSSM_EXE=%APP_DIR%\nssm.exe"
+)
+if not defined NSSM_EXE (
+    if exist "%~dp0nssm.exe" (
+        "%~dp0nssm.exe" version >nul 2>&1
+        if !errorLevel! equ 0 set "NSSM_EXE=%~dp0nssm.exe"
+    )
+)
+if not defined NSSM_EXE (
+    for %%X in (nssm.exe) do (
+        "%%~$PATH:X" version >nul 2>&1
+        if !errorLevel! equ 0 set "NSSM_EXE=%%~$PATH:X"
+    )
+)
+if not defined NSSM_EXE (
+    if exist "C:\Bazarr\nssm.exe" (
+        "C:\Bazarr\nssm.exe" version >nul 2>&1
+        if !errorLevel! equ 0 set "NSSM_EXE=C:\Bazarr\nssm.exe"
+    )
+)
+if not defined NSSM_EXE (
+    echo [INFO] Downloading NSSM Win64...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference = 'SilentlyContinue'; [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; $zip = Join-Path $env:TEMP 'nssm.zip'; $extract = Join-Path $env:TEMP 'nssm_extracted'; Invoke-WebRequest -Uri 'https://nssm.cc/release/nssm-2.24.zip' -OutFile $zip -TimeoutSec 15; Expand-Archive -Path $zip -DestinationPath $extract -Force; Copy-Item (Join-Path $extract 'nssm-2.24\win64\nssm.exe') '%APP_DIR%\nssm.exe' -Force; Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue"
+    if exist "%APP_DIR%\nssm.exe" (
+        "%APP_DIR%\nssm.exe" version >nul 2>&1
+        if !errorLevel! equ 0 set "NSSM_EXE=%APP_DIR%\nssm.exe"
     )
 )
 
-:: Create logs and data directories
-if not exist "%APP_DIR%logs" mkdir "%APP_DIR%logs"
-if not exist "%APP_DIR%data" mkdir "%APP_DIR%data"
+if not defined NSSM_EXE (
+    echo [ERROR] Failed to obtain working nssm.exe.
+    if "%~1" neq "--no-pause" pause
+    exit /b 1
+)
 
-:: Install and configure the service via NSSM
-echo [INFO] Configuring %SERVICE_NAME% with NSSM (%NSSM_CMD%)...
-"%NSSM_CMD%" status "%SERVICE_NAME%" >nul 2>&1
+echo ============================================================================
+echo  Installing / Updating Verifyarr Service
+echo  Directory: %APP_DIR%
+echo ============================================================================
+
+:: 1. Terminate running process and remove old service registration
+taskkill /F /IM verifyarr.exe /T >nul 2>&1
+"%NSSM_EXE%" stop Verifyarr >nul 2>&1
+"%NSSM_EXE%" remove Verifyarr confirm >nul 2>&1
+
+if not exist "%APP_DIR%\data" mkdir "%APP_DIR%\data"
+
+:: Ensure default config exists
+if not exist "%APP_DIR%\config.yaml" (
+    if exist "%APP_DIR%\config.example.yaml" (
+        copy /Y "%APP_DIR%\config.example.yaml" "%APP_DIR%\config.yaml" >nul
+    )
+)
+
+:: 2. Register service
+"%NSSM_EXE%" install Verifyarr "%APP_EXE%"
+"%NSSM_EXE%" set Verifyarr AppDirectory "%APP_DIR%"
+"%NSSM_EXE%" set Verifyarr AppStdout "%APP_DIR%\data\verifyarr.log"
+"%NSSM_EXE%" set Verifyarr AppStderr "%APP_DIR%\data\verifyarr-error.log"
+"%NSSM_EXE%" set Verifyarr Start SERVICE_AUTO_START
+"%NSSM_EXE%" set Verifyarr AppRestartDelay 3000
+
+:: 3. Start service
+"%NSSM_EXE%" start Verifyarr
+
+:: 4. Health Check
+echo Checking service status on port 7979...
+powershell -NoProfile -Command "Start-Sleep -Seconds 3"
+powershell -NoProfile -Command "try { $r = Invoke-WebRequest -Uri 'http://localhost:7979/' -UseBasicParsing -TimeoutSec 3; exit 0 } catch { exit 1 }"
+
 if %errorLevel% equ 0 (
-    echo [INFO] %SERVICE_NAME% service is already registered. Updating configuration...
+    echo [SUCCESS] Verifyarr is active and listening at http://localhost:7979/
 ) else (
-    echo [INFO] Registering new %SERVICE_NAME% service...
-    "%NSSM_CMD%" install "%SERVICE_NAME%" "%EXE_PATH%"
+    echo [WARNING] Service started but port 7979 did not respond yet.
+    echo Printing last 20 lines of %APP_DIR%\data\verifyarr-error.log:
+    echo ----------------------------------------------------------------------------
+    if exist "%APP_DIR%\data\verifyarr-error.log" (
+        powershell -NoProfile -Command "Get-Content '%APP_DIR%\data\verifyarr-error.log' -Tail 20"
+    ) else (
+        echo Error log file was not created.
+    )
+    echo ----------------------------------------------------------------------------
 )
 
-"%NSSM_CMD%" set "%SERVICE_NAME%" Application "%EXE_PATH%"
-"%NSSM_CMD%" set "%SERVICE_NAME%" AppDirectory "%APP_DIR_CLEAN%"
-"%NSSM_CMD%" set "%SERVICE_NAME%" DisplayName "Verifyarr Media Verification Service"
-"%NSSM_CMD%" set "%SERVICE_NAME%" Description "Multi-tier media verification companion for Radarr, Sonarr, and Jellyfin."
-"%NSSM_CMD%" set "%SERVICE_NAME%" Start SERVICE_AUTO_START
-"%NSSM_CMD%" set "%SERVICE_NAME%" AppStdout "%APP_DIR%logs\service-stdout.log"
-"%NSSM_CMD%" set "%SERVICE_NAME%" AppStderr "%APP_DIR%logs\service-stderr.log"
-"%NSSM_CMD%" set "%SERVICE_NAME%" AppRotateFiles 1
-"%NSSM_CMD%" set "%SERVICE_NAME%" AppRotateOnline 1
-"%NSSM_CMD%" set "%SERVICE_NAME%" AppRotateBytes 10485760
-
-echo [INFO] Starting %SERVICE_NAME% service...
-"%NSSM_CMD%" start "%SERVICE_NAME%" >nul 2>&1
-if %errorLevel% neq 0 (
-    echo [INFO] Service start returned non-zero (it may already be running). Attempting restart...
-    "%NSSM_CMD%" restart "%SERVICE_NAME%" >nul 2>&1
-)
-
-echo.
-echo [SUCCESS] %SERVICE_NAME% service installed and started!
-echo           Dashboard URL: http://localhost:7979
-echo           Config File  : %APP_DIR%config.yaml
-echo           Service Logs : %APP_DIR%logs\
-
-if not defined NO_PAUSE pause
-endlocal
+if "%~1" neq "--no-pause" pause

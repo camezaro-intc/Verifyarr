@@ -129,7 +129,7 @@ def test_post_api_settings_persists_to_disk_and_hot_reloads_in_memory(
         assert disk_data["radarr"]["url"] == "http://127.0.0.1:7878"
         assert disk_data["radarr"]["api_key"] == "updated-radarr-key"
         assert disk_data["path_mappings"] == [
-            {"remote_path": r"E:\Temp_Flex_Media", "local_path": "/media", "use_regex": False}
+            {"remote_path": "E:/Temp_Flex_Media", "local_path": "/media", "use_regex": False}
         ]
 
         # 2. Verify in-memory hot reload across app.state and Verifier / Remediator
@@ -355,14 +355,44 @@ def test_settings_save_with_trailing_slashes_and_relaxed_binaries(
         assert res.status_code == 200
         assert res.json()["status"] == "ok"
 
-        # Verify saved in config.yaml without trailing slashes
+        # Verify saved in config.yaml with forward slashes and without trailing slashes
         disk_data = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
         assert disk_data["path_mappings"] == [
-            {"local_path": "/media", "remote_path": r"E:\Temp_Flex_Media", "use_regex": False}
+            {"local_path": "/media", "remote_path": "E:/Temp_Flex_Media", "use_regex": False}
         ]
-        assert disk_data["binaries"]["ffprobe_path"] == "C:\\Program Files\\Custom\\ffprobe.exe"
+        assert disk_data["binaries"]["ffprobe_path"] == "C:/Program Files/Custom/ffprobe.exe"
         assert disk_data["binaries"]["ffmpeg_path"] == "arbitrary_custom_binary"
         assert (
             disk_data["binaries"]["tesseract_path"]
-            == "C:\\Program Files\\Tesseract-OCR\\nonexistent.exe"
+            == "C:/Program Files/Tesseract-OCR/nonexistent.exe"
         )
+
+
+def test_normalize_path_and_resilient_yaml_loader(tmp_path: Path) -> None:
+    from src.config import load_yaml_resilient, normalize_path
+
+    # 1. normalize_path
+    assert (
+        normalize_path(r"C:\Program Files\Jellyfin\Server\ffprobe.exe")
+        == "C:/Program Files/Jellyfin/Server/ffprobe.exe"
+    )
+    assert normalize_path("E:\\Temp_Flex_Media\\") == "E:/Temp_Flex_Media/"
+    assert normalize_path(None) is None
+    assert normalize_path("") == ""
+
+    # 2. load_yaml_resilient handles unescaped Windows paths without ScannerError
+    bad_yaml_file = tmp_path / "unescaped_windows_config.yaml"
+    bad_content = (
+        "binaries:\n"
+        '  ffprobe_path: "C:\\Program Files\\Jellyfin\\Server\\ffprobe.exe"\n'
+        '  ffmpeg_path: "C:\\ffmpeg\\bin\\ffmpeg.exe"\n'
+        "path_mappings:\n"
+        '  - from: "E:\\Temp_Flex_Media\\Movies"\n'
+        '    to: "/media"\n'
+    )
+    bad_yaml_file.write_text(bad_content, encoding="utf-8")
+
+    loaded = load_yaml_resilient(bad_yaml_file)
+    assert loaded["binaries"]["ffprobe_path"] == "C:/Program Files/Jellyfin/Server/ffprobe.exe"
+    assert loaded["binaries"]["ffmpeg_path"] == "C:/ffmpeg/bin/ffmpeg.exe"
+    assert loaded["path_mappings"][0]["from"] == "E:/Temp_Flex_Media/Movies"

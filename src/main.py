@@ -63,7 +63,11 @@ configure_logging("info")
 def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):  # noqa: ANN202
-        active = settings or load_settings()
+        try:
+            active = settings or load_settings()
+        except Exception as exc:
+            logger.error("Failed to load settings in lifespan: %s. Using defaults.", exc)
+            active = settings or Settings()
         configure_logging(active.server.log_level)
         logger.info("Starting Verifyarr %s", __version__)
 
@@ -247,14 +251,23 @@ app = create_app()
 
 
 def run() -> None:
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except Exception as exc:
+        logger.error("Failed to load settings: %s. Using defaults.", exc)
+        settings = Settings()
+
     configure_logging(settings.server.log_level)
-    # log_config=None keeps uvicorn's loggers on our ISO-timestamp root handler.
+    host = getattr(settings.server, "host", "0.0.0.0")
+    port = getattr(settings.server, "port", 7979)
+    log_level = getattr(settings.server, "log_level", "info")
+
+    # Pass the app object directly to support frozen PyInstaller binaries
     uvicorn.run(
         app,
-        host=settings.server.host,
-        port=settings.server.port,
-        log_level=settings.server.log_level,
+        host=host,
+        port=port,
+        log_level=log_level,
         log_config=None,
     )
 

@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.4.2"
+  #define AppVersion "1.4.3"
 #endif
 
 [Setup]
@@ -64,6 +64,24 @@ begin
   Result := not IsTesseractInstalled();
 end;
 
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  // 1. Stop existing service
+  Exec('net', 'stop Verifyarr', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if FileExists(ExpandConstant('{app}\nssm.exe')) then
+  begin
+    Exec(ExpandConstant('{app}\nssm.exe'), 'stop Verifyarr', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
+  // 2. Kill running processes holding file locks
+  Exec('taskkill', '/F /IM verifyarr.exe /T', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(1000);
+
+  Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
@@ -80,22 +98,22 @@ begin
       Exec('winget', 'install --id UB-Mannheim.TesseractOCR -e --silent --accept-source-agreements --accept-package-agreements', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
 
-    // Discover binary paths across standard locations
+    // Discover binary paths across standard locations with forward slashes
     FFprobePath := '';
     if FileExists('C:\Program Files\Jellyfin\Server\ffprobe.exe') then
-      FFprobePath := 'C:\Program Files\Jellyfin\Server\ffprobe.exe'
+      FFprobePath := 'C:/Program Files/Jellyfin/Server/ffprobe.exe'
     else if FileExists('C:\ffmpeg\bin\ffprobe.exe') then
-      FFprobePath := 'C:\ffmpeg\bin\ffprobe.exe';
+      FFprobePath := 'C:/ffmpeg/bin/ffprobe.exe';
 
     FFmpegPath := '';
     if FileExists('C:\Program Files\Jellyfin\Server\ffmpeg.exe') then
-      FFmpegPath := 'C:\Program Files\Jellyfin\Server\ffmpeg.exe'
+      FFmpegPath := 'C:/Program Files/Jellyfin/Server/ffmpeg.exe'
     else if FileExists('C:\ffmpeg\bin\ffmpeg.exe') then
-      FFmpegPath := 'C:\ffmpeg\bin\ffmpeg.exe';
+      FFmpegPath := 'C:/ffmpeg/bin/ffmpeg.exe';
 
     TesseractPath := '';
     if FileExists('C:\Program Files\Tesseract-OCR\tesseract.exe') then
-      TesseractPath := 'C:\Program Files\Tesseract-OCR\tesseract.exe';
+      TesseractPath := 'C:/Program Files/Tesseract-OCR/tesseract.exe';
 
     // Ensure config.yaml exists
     ConfigFile := ExpandConstant('{app}\config.yaml');

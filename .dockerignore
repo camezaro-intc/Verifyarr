@@ -34,6 +34,7 @@ htmlcov/
 
 # Tests, docs and tooling not needed at runtime
 tests/
+scripts/
 pytest.ini
 pyproject.toml
 requirements-dev.txt

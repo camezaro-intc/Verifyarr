@@ -1,13 +1,11 @@
 # Verifyarr - Automated Media Verification & Mockbuster Guard for the Servarr Stack
 
-[![GitHub release](https://img.shields.io/github/v/release/OWNER/verifyarr?logo=github)](https://github.com/OWNER/verifyarr/releases)
-[![Docker image](https://img.shields.io/badge/docker-ghcr.io%2FOWNER%2Fverifyarr-2496ED?logo=docker&logoColor=white)](https://github.com/OWNER/verifyarr/pkgs/container/verifyarr)
+[![GitHub release](https://img.shields.io/github/v/release/camezaro-intc/Verifyarr?logo=github)](https://github.com/camezaro-intc/Verifyarr/releases)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io%2Fcamezaro-intc%2Fverifyarr-2496ED?logo=docker&logoColor=white)](https://github.com/camezaro-intc/Verifyarr/pkgs/container/verifyarr)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 Verifyarr is a companion service for **Radarr**, **Sonarr** and **Jellyfin**. It receives a webhook every time a file is imported or upgraded, inspects the file with `ffprobe`/`ffmpeg`, and only lets media into your library if it is what it claims to be. Bad files are logged (dry-run) or automatically deleted, blocklisted and re-searched.
-
-> **Before you start:** replace `OWNER` in the badges and image names with your GitHub user or organisation.
 
 ```text
 [ Radarr / Sonarr ] --(Webhook: On Import / On Upgrade)--> [ Verifyarr :7979 ]
@@ -94,7 +92,7 @@ The most reliable tell is the **runtime delta**: the container duration compared
    ```yaml
    services:
      verifyarr:
-       image: ghcr.io/OWNER/verifyarr:latest
+       image: ghcr.io/camezaro-intc/verifyarr:latest
        container_name: verifyarr
        restart: unless-stopped
        user: "1000:1000"                  # must be able to READ your media
@@ -150,7 +148,7 @@ This runs Verifyarr as a background Windows service on port **7979**.
 2. **Get the code and install dependencies:**
 
    ```powershell
-   git clone https://github.com/OWNER/verifyarr.git C:\verifyarr
+   git clone https://github.com/camezaro-intc/Verifyarr.git C:\verifyarr
    cd C:\verifyarr
    python -m venv .venv
    .\.venv\Scripts\python.exe -m pip install -r requirements.txt

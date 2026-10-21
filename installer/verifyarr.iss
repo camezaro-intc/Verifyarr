@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.4.1"
+  #define AppVersion "1.4.2"
 #endif
 
 [Setup]
@@ -24,7 +24,7 @@ Source: "..\dist\verifyarr\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion ski
 Source: "..\config.example.yaml"; DestDir: "{app}"; DestName: "config.example.yaml"; Flags: ignoreversion
 
 ; ONLY install default config.yaml if the user doesn't already have one
-Source: "..\config.example.yaml"; DestDir: "{app}"; DestName: "config.yaml"; Flags: onlyifdestdoesntexist uninsneveruninstall
+Source: "..\config.example.yaml"; DestDir: "{app}"; DestName: "config.yaml"; Flags: onlyifdoesntexist uninsneveruninstall
 
 [Dirs]
 ; Keep the data directory intact across uninstalls/reinstalls

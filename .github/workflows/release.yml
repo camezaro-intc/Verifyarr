@@ -59,8 +59,8 @@ jobs:
           $zip = "$env:TEMP\nssm-2.24.zip"
           $extract = "$env:TEMP\nssm_extracted"
           $urls = @(
-            'https://nssm.cc/release/nssm-2.24.zip',
-            'https://github.com/kirillkovalenko/nssm/releases/download/2.24/nssm-2.24.zip'
+            'https://github.com/kirillkovalenko/nssm/releases/download/2.24/nssm-2.24.zip',
+            'https://nssm.cc/release/nssm-2.24.zip'
           )
           $downloaded = $false
           foreach ($u in $urls) {
@@ -70,21 +70,27 @@ jobs:
               $downloaded = $true
               break
             } catch {
-              Write-Warning "Failed downloading from $u: $_"
+              Write-Warning "Failed downloading from $u - $_"
             }
           }
-          if (-not $downloaded) {
-            throw "Unable to download nssm.exe from mirrors"
+          if ($downloaded) {
+            Expand-Archive -Path $zip -DestinationPath $extract -Force
+            Copy-Item "$extract\nssm-2.24\win64\nssm.exe" "dist/verifyarr/nssm.exe" -Force
+            Copy-Item "$extract\nssm-2.24\win64\nssm.exe" "dist/verifyarr/scripts/windows/nssm.exe" -Force
+            Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue
+          } else {
+            Write-Host "Downloading NSSM via Chocolatey fallback..."
+            choco install nssm --no-progress -y
+            $nssmCmd = Get-Command nssm -ErrorAction SilentlyContinue
+            $nssmPath = if ($nssmCmd) { $nssmCmd.Source } else { "C:\ProgramData\chocolatey\bin\nssm.exe" }
+            Copy-Item $nssmPath "dist/verifyarr/nssm.exe" -Force
+            Copy-Item $nssmPath "dist/verifyarr/scripts/windows/nssm.exe" -Force
           }
-          Expand-Archive -Path $zip -DestinationPath $extract -Force
-          Copy-Item "$extract\nssm-2.24\win64\nssm.exe" "dist/verifyarr/nssm.exe" -Force
-          Copy-Item "$extract\nssm-2.24\win64\nssm.exe" "dist/verifyarr/scripts/windows/nssm.exe" -Force
-          Remove-Item $zip, $extract -Recurse -Force -ErrorAction SilentlyContinue
 
       - name: Create Verifyarr-windows-x64.zip archive
         shell: pwsh
         run: |
-          Compress-Archive -Path "dist/verifyarr/*" -DestinationPath "dist/Verifyarr-windows-x64.zip" -Force
+          Compress-Archive -Path "dist/verifyarr/*" -DestinationPath "Verifyarr-windows-x64.zip" -Force
 
       - name: Compile Inno Setup 1-Click Installer
         shell: pwsh
@@ -96,16 +102,19 @@ jobs:
           }
           $tagVersion = "${{ github.ref_name }}"
           if ($tagVersion -like "v*") { $tagVersion = $tagVersion.Substring(1) }
-          if (-not $tagVersion) { $tagVersion = "1.2.0" }
+          if (-not $tagVersion) { $tagVersion = "1.3.0" }
           & $iscc "/DAppVersion=$tagVersion" installer/verifyarr.iss
+          if (Test-Path "dist/Verifyarr-windows-x64-Setup.exe") {
+            Copy-Item "dist/Verifyarr-windows-x64-Setup.exe" "." -Force
+          }
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-assets
           path: |
-            dist/Verifyarr-windows-x64-Setup.exe
-            dist/Verifyarr-windows-x64.zip
+            Verifyarr-windows-x64-Setup.exe
+            Verifyarr-windows-x64.zip
 
   build-linux:
     name: Build Linux x64 Portable Tarball

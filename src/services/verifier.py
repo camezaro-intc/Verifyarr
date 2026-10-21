@@ -32,6 +32,22 @@ logger = logging.getLogger(__name__)
 _OPENING_TIMESTAMPS = (30, 90)
 _ENDING_OFFSETS_FROM_CREDITS_START = (0, 60)
 _ENDING_WINDOW_SECONDS = 180
+_VIDEO_EXTENSIONS = frozenset({".mkv", ".mp4", ".avi", ".m4v", ".ts", ".mov", ".wmv", ".webm"})
+
+
+def _resolve_video_file(path: Path) -> Path | None:
+    """Return ``path`` if it is a file, or the largest video file inside ``path`` if a directory."""
+    if path.is_file():
+        return path
+    if path.is_dir():
+        candidates = [
+            child
+            for child in path.rglob("*")
+            if child.is_file() and child.suffix.lower() in _VIDEO_EXTENSIONS
+        ]
+        if candidates:
+            return max(candidates, key=lambda p: p.stat().st_size)
+    return None
 
 
 class Verifier:
@@ -109,7 +125,13 @@ class Verifier:
             return await self._record_error(job, f"Unexpected error: {exc!r}")
 
     async def _verify(self, job: VerificationJob) -> HistoryEntry:
-        logger.info("Verifying [%s] %s (%s)", job.app, job.title, job.release_title)
+        logger.info(
+            "Verifying [%s] %s (release=%s, path=%s)",
+            job.app,
+            job.title,
+            job.release_title,
+            job.remote_path,
+        )
 
         if await self._history.is_whitelisted(job.release_title):
             entry = await self._history.add(
@@ -128,20 +150,23 @@ class Verifier:
                 )
             )
             logger.info("PASSED (whitelisted) %s", job.release_title)
-            await self._notifier.refresh_jellyfin()
+            await self._safe_refresh_jellyfin()
             return entry
 
         await self._enrich(job)
 
         if not job.remote_path:
             return await self._record_error(job, "Webhook payload did not include a file path")
-        local_path = self._mapper.to_local(job.remote_path)
-        if not await asyncio.to_thread(local_path.is_file):
+        mapped_path = self._mapper.to_local(job.remote_path)
+        local_path = await asyncio.to_thread(_resolve_video_file, mapped_path)
+        if local_path is None:
             return await self._record_error(
                 job,
-                f"File not found: {local_path} (from {job.remote_path}); "
+                f"File not found: {mapped_path} (from {job.remote_path}); "
                 "check path_mappings and volume mounts",
             )
+        if local_path != mapped_path and job.release_title in ("unknown", mapped_path.stem):
+            job.release_title = local_path.stem
 
         try:
             async with self._semaphore:
@@ -160,8 +185,13 @@ class Verifier:
                     file_path=str(local_path),
                 )
             )
-            logger.info("PASSED %s", job.release_title)
-            await self._notifier.refresh_jellyfin()
+            logger.info(
+                "PASSED %s (probed %.1f min / expected %s min)",
+                job.release_title,
+                probe.duration_minutes,
+                f"{job.expected_runtime_min:.0f}" if job.expected_runtime_min else "n/a",
+            )
+            await self._safe_refresh_jellyfin()
             return entry
 
         reasons = [f"Tier {c.tier} {c.name}: {c.detail}" for c in failed]
@@ -193,7 +223,7 @@ class Verifier:
                     file_path=str(local_path),
                 )
             )
-        await self._notifier.notify_failure(entry)
+        await self._safe_notify_failure(entry)
         return entry
 
     # -- tiers ---------------------------------------------------------------------
@@ -348,14 +378,17 @@ class Verifier:
     # -- helpers -------------------------------------------------------------------
 
     async def _enrich(self, job: VerificationJob) -> None:
-        """Fill in runtime / original language from the Servarr API when the webhook lacks them."""
+        """Fill in runtime / original language / file path from Servarr when webhook lacks them."""
+        if not job.entity_id or job.entity_id <= 0:
+            return
         need_runtime = not job.expected_runtime_min
         need_language = self._cfg.enable_audio_sanity_check and not job.original_language
-        if not (need_runtime or need_language):
+        need_file = job.file_id is None or not job.remote_path
+        if not (need_runtime or need_language or need_file):
             return
         try:
             meta = await self._remediator.get_media_metadata(job.app, job.entity_id)
-        except RemediationError as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Could not fetch metadata for %s: %s", job.title, exc)
             return
         if need_runtime and meta.get("runtime"):
@@ -366,6 +399,12 @@ class Verifier:
         if need_language:
             language = meta.get("originalLanguage")
             job.original_language = language.get("name") if isinstance(language, dict) else language
+        movie_file = meta.get("movieFile")
+        if isinstance(movie_file, dict):
+            if job.file_id is None and movie_file.get("id"):
+                job.file_id = int(movie_file["id"])
+            if movie_file.get("path"):
+                job.remote_path = str(movie_file["path"])
 
     async def _remediate(self, job: VerificationJob) -> list[str]:
         """Delete file -> blocklist release -> trigger replacement search (each step is logged)."""
@@ -451,5 +490,20 @@ class Verifier:
                 remediation=["No action taken (file could not be verified)"],
             )
         )
-        await self._notifier.notify_error(entry)
+        try:
+            await self._notifier.notify_error(entry)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Error notification failed: %s", exc)
         return entry
+
+    async def _safe_refresh_jellyfin(self) -> None:
+        try:
+            await self._notifier.refresh_jellyfin()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Jellyfin refresh failed: %s", exc)
+
+    async def _safe_notify_failure(self, entry: HistoryEntry) -> None:
+        try:
+            await self._notifier.notify_failure(entry)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failure notification failed: %s", exc)

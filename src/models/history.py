@@ -11,11 +11,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 import threading
 from datetime import UTC, datetime
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -106,15 +106,23 @@ class HistoryStore:
         await asyncio.to_thread(self._open)
 
     def _open(self) -> None:
-        if self._database_path != ":memory:":
-            Path(self._database_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self._database_path, check_same_thread=False)
+        db_path = self._database_path
+        if db_path != ":memory:":
+            db_path = os.path.abspath(os.path.expanduser(db_path))
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+            self._database_path = db_path
+        conn = sqlite3.connect(self._database_path, check_same_thread=False, timeout=30.0)
         conn.row_factory = sqlite3.Row
         with self._lock:
+            if self._database_path != ":memory:":
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
             conn.executescript(_SCHEMA)
             conn.commit()
             self._conn = conn
-        logger.info("History store ready at %s", self._database_path)
+        logger.info("History store ready at %s (WAL enabled)", self._database_path)
 
     async def close(self) -> None:
         await asyncio.to_thread(self._close)
@@ -160,7 +168,15 @@ class HistoryStore:
                 ),
             )
             conn.commit()
-            return entry.model_copy(update={"id": cursor.lastrowid})
+            saved = entry.model_copy(update={"id": cursor.lastrowid})
+        logger.info(
+            "SQLite committed history id=%s status=%s title='%s' release='%s'",
+            saved.id,
+            saved.status.value,
+            saved.title,
+            saved.release_name,
+        )
+        return saved
 
     async def recent(self, limit: int = 50) -> list[HistoryEntry]:
         return await asyncio.to_thread(self._recent, limit)

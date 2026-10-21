@@ -38,3 +38,4 @@ You can expect an acknowledgement within **7 days** and a status update within *
 - API keys are held as secrets in configuration and sent only in the `X-Api-Key` / `X-Emby-Token` headers of requests to the configured Servarr and Jellyfin URLs.
 - **The webhook and dashboard (including Force Approve) have no built-in authentication.** Run Verifyarr on a trusted network, do not expose port 7979 to the internet, and put an authenticating reverse proxy in front of it if you need remote access. Reports that only state this are a known limitation, not a vulnerability.
 - Keep `config.yaml` and `.env` out of version control and readable only by the service account.
+

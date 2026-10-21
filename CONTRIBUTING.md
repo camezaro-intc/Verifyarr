@@ -70,3 +70,4 @@ Tests must not need real media, `ffmpeg`, `ffprobe`, Tesseract or network access
 6. Be responsive to review feedback. PRs are squash-merged, so your branch history does not need to be pristine.
 
 Changes that make Verifyarr more destructive (anything that deletes, blocklists or otherwise changes a user's library) must stay behind `dry_run` and be called out clearly in the PR description.
+

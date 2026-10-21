@@ -35,7 +35,12 @@ htmlcov/
 # Tests, docs and tooling not needed at runtime
 tests/
 pytest.ini
+pyproject.toml
+requirements-dev.txt
 README.md
+CONTRIBUTING.md
+SECURITY.md
+CODE_OF_CONDUCT.md
 LICENSE
 docker-compose.yml
 Dockerfile

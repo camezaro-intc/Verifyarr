@@ -121,3 +121,4 @@ body:
           required: true
         - label: I removed all API keys, tokens and webhook URLs from this report.
           required: true
+

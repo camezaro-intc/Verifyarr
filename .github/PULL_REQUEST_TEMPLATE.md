@@ -42,3 +42,4 @@ Radarr / Sonarr version(s) tested: <!-- e.g. Radarr 5.14, Sonarr 4.0.10 -->
 Mode: <!-- dry-run / live -->
 
 ## Screenshots or logs (optional)
+

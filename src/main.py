@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ from pydantic import ValidationError
 from src import __version__
 from src.config import Settings, load_settings
 from src.models.history import HistoryStore, VerificationStatus
-from src.models.servarr import ServarrWebhookPayload
+from src.models.servarr import ServarrWebhookPayload, extract_fallback_jobs
 from src.services.notifier import Notifier
 from src.services.remediator import Remediator
 from src.services.verifier import Verifier
@@ -37,12 +38,15 @@ class _IsoFormatter(logging.Formatter):
         return datetime.fromtimestamp(record.created).astimezone().isoformat(timespec="seconds")
 
 
-def configure_logging(level: str) -> None:
-    handler = logging.StreamHandler()
+def configure_logging(level: str = "info") -> None:
+    handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(_IsoFormatter("%(asctime)s %(levelname)-8s %(name)s: %(message)s"))
     root = logging.getLogger()
     root.handlers[:] = [handler]
     root.setLevel(logging.DEBUG if level in ("debug", "trace") else getattr(logging, level.upper()))
+
+
+configure_logging("info")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -92,35 +96,78 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not isinstance(body, dict):
             raise HTTPException(status_code=400, detail="Body must be a JSON object")
 
+        raw_movie = body.get("movie")
+        raw_series = body.get("series")
+        movie_raw: dict[str, Any] = raw_movie if isinstance(raw_movie, dict) else {}
+        series_raw: dict[str, Any] = raw_series if isinstance(raw_series, dict) else {}
+        logger.info(
+            "Incoming Webhook: eventType='%s', title='%s'",
+            body.get("eventType"),
+            movie_raw.get("title") or series_raw.get("title") or body.get("title"),
+        )
+        logger.debug("Raw webhook payload: %s", body)
+
         # Intercept Test events before validation so the "Test" button always succeeds.
-        if str(body.get("eventType", "")).lower() == "test":
+        if str(body.get("eventType", "")).strip().lower() == "test":
             logger.info("Received webhook test event")
             return JSONResponse({"status": "ok", "message": "Verifyarr webhook test successful"})
 
+        active: Settings = request.app.state.settings
         try:
             payload = ServarrWebhookPayload.model_validate(body)
         except ValidationError as exc:
-            logger.warning("Rejected malformed webhook payload: %s", exc.errors(include_url=False))
-            raise HTTPException(
-                status_code=422, detail=exc.errors(include_url=False, include_context=False)
-            ) from exc
+            logger.error(
+                "Webhook Pydantic validation error (attempting fallback extraction): %s",
+                exc.errors(include_url=False),
+            )
+            fallback_jobs = extract_fallback_jobs(body)
+            if not fallback_jobs:
+                raise HTTPException(
+                    status_code=422, detail=exc.errors(include_url=False, include_context=False)
+                ) from exc
+            fb_app = fallback_jobs[0].app
+            if not getattr(active, fb_app).enabled:
+                return JSONResponse(
+                    {"status": "ignored", "message": f"{fb_app} integration is disabled"}
+                )
+            queued = request.app.state.verifier.submit(fallback_jobs)
+            logger.info(
+                "Queued %d file(s) via fallback extractor from %s event",
+                queued,
+                body.get("eventType"),
+            )
+            return JSONResponse({"status": "accepted", "queued": queued}, status_code=202)
 
         if not payload.is_import_event:
+            logger.info("Ignoring non-import webhook event '%s'", payload.event_type)
             return JSONResponse(
                 {"status": "ignored", "message": f"Event {payload.event_type!r} is not verified"}
             )
 
-        active: Settings = request.app.state.settings
         app_name = payload.app
         if app_name is None:
             raise HTTPException(status_code=400, detail="Payload has neither movie nor series")
         if not getattr(active, app_name).enabled:
+            logger.info("Ignoring webhook because %s integration is disabled", app_name)
             return JSONResponse(
                 {"status": "ignored", "message": f"{app_name} integration is disabled"}
             )
 
-        jobs = payload.to_jobs()
+        jobs = payload.to_jobs() or extract_fallback_jobs(body)
         if not jobs:
+            entity = payload.movie or payload.series
+            if entity is not None and entity.id is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=[
+                        {
+                            "loc": ["movieFile", "path"],
+                            "msg": "Field required: media file path missing",
+                            "type": "missing",
+                        }
+                    ],
+                )
+            logger.info("Webhook payload contains no media file to verify")
             return JSONResponse(
                 {"status": "ignored", "message": "Payload contains no imported media file"}
             )

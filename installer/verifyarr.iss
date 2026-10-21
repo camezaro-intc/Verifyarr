@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.3.0"
+  #define AppVersion "1.4.0"
 #endif
 
 [Setup]
@@ -22,7 +22,95 @@ Source: "..\dist\verifyarr\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion ski
 
 [Tasks]
 Name: "installservice"; Description: "Register and start Verifyarr as a background Windows Service (NSSM)"; Flags: checkedonce
+Name: "installtesseract"; Description: "Download and install Tesseract OCR engine (Recommended for Tier 3B Mockbuster OCR)"; GroupDescription: "Optional OCR Utilities:"; Flags: unchecked; Check: ShouldOfferTesseract
 
 [Run]
 Filename: "{app}\scripts\windows\install-service.bat"; Parameters: "--no-pause"; Description: "Installing service"; Flags: runhidden; Tasks: installservice
 Filename: "http://localhost:7979"; Flags: shellexec runasoriginaluser postinstall nowait; Description: "Open Verifyarr Web Dashboard"
+
+[Code]
+function IsTesseractInstalled(): Boolean;
+var
+  RegPath: string;
+begin
+  Result := False;
+  if FileExists('C:\Program Files\Tesseract-OCR\tesseract.exe') then
+  begin
+    Result := True;
+    Exit;
+  end;
+  if RegQueryStringValue(HKEY_LOCAL_MACHINE, 'SOFTWARE\Tesseract-OCR', 'InstallDir', RegPath) then
+  begin
+    if FileExists(AddBackslash(RegPath) + 'tesseract.exe') then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function ShouldOfferTesseract(): Boolean;
+begin
+  Result := not IsTesseractInstalled();
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  ConfigFile: string;
+  Lines: TArrayOfString;
+  I: Integer;
+  FFprobePath, FFmpegPath, TesseractPath: string;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    // If requested, silently install Tesseract via winget
+    if WizardIsTaskSelected('installtesseract') then
+    begin
+      Exec('winget', 'install --id UB-Mannheim.TesseractOCR -e --silent --accept-source-agreements --accept-package-agreements', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
+
+    // Discover binary paths across standard locations
+    FFprobePath := '';
+    if FileExists('C:\Program Files\Jellyfin\Server\ffprobe.exe') then
+      FFprobePath := 'C:\Program Files\Jellyfin\Server\ffprobe.exe'
+    else if FileExists('C:\ffmpeg\bin\ffprobe.exe') then
+      FFprobePath := 'C:\ffmpeg\bin\ffprobe.exe';
+
+    FFmpegPath := '';
+    if FileExists('C:\Program Files\Jellyfin\Server\ffmpeg.exe') then
+      FFmpegPath := 'C:\Program Files\Jellyfin\Server\ffmpeg.exe'
+    else if FileExists('C:\ffmpeg\bin\ffmpeg.exe') then
+      FFmpegPath := 'C:\ffmpeg\bin\ffmpeg.exe';
+
+    TesseractPath := '';
+    if FileExists('C:\Program Files\Tesseract-OCR\tesseract.exe') then
+      TesseractPath := 'C:\Program Files\Tesseract-OCR\tesseract.exe';
+
+    // Ensure config.yaml exists
+    ConfigFile := ExpandConstant('{app}\config.yaml');
+    if not FileExists(ConfigFile) then
+    begin
+      if FileExists(ExpandConstant('{app}\config.example.yaml')) then
+        FileCopy(ExpandConstant('{app}\config.example.yaml'), ConfigFile, False);
+    end;
+
+    // Write discovered binary paths into config.yaml if found
+    if FileExists(ConfigFile) and ((FFprobePath <> '') or (FFmpegPath <> '') or (TesseractPath <> '')) then
+    begin
+      if LoadStringsFromFile(ConfigFile, Lines) then
+      begin
+        for I := 0 to GetArrayLength(Lines) - 1 do
+        begin
+          if (FFprobePath <> '') and (Pos('ffprobe_path:', Lines[I]) > 0) then
+            Lines[I] := '  ffprobe_path: "' + FFprobePath + '"';
+          if (FFmpegPath <> '') and (Pos('ffmpeg_path:', Lines[I]) > 0) then
+            Lines[I] := '  ffmpeg_path: "' + FFmpegPath + '"';
+          if (TesseractPath <> '') and (Pos('tesseract_path:', Lines[I]) > 0) then
+            Lines[I] := '  tesseract_path: "' + TesseractPath + '"';
+        end;
+        SaveStringsToFile(ConfigFile, Lines, False);
+      end;
+    end;
+  end;
+end;

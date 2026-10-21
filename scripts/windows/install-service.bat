@@ -47,19 +47,31 @@ if %errorLevel% neq 0 (
     exit /b 1
 )
 
-:: Locate or download NSSM (Non-Sucking Service Manager)
+:: Locate or verify NSSM (Non-Sucking Service Manager)
 set "NSSM_CMD="
-if exist "%APP_DIR%nssm.exe" (
-    set "NSSM_CMD=%APP_DIR%nssm.exe"
-) else if exist "%SCRIPT_DIR%nssm.exe" (
-    set "NSSM_CMD=%SCRIPT_DIR%nssm.exe"
-) else if exist "C:\Verifyarr\nssm.exe" (
-    set "NSSM_CMD=C:\Verifyarr\nssm.exe"
-) else if exist "C:\Bazarr\nssm.exe" (
-    set "NSSM_CMD=C:\Bazarr\nssm.exe"
-) else (
+
+:: Check existing candidate executables and test if they actually run
+for %%C in ("%APP_DIR%nssm.exe" "%SCRIPT_DIR%nssm.exe" "C:\Verifyarr\nssm.exe" "C:\Bazarr\nssm.exe" "C:\Program Files\Jellyfin\Server\nssm.exe") do (
+    if not defined NSSM_CMD (
+        if exist "%%~fC" (
+            "%%~fC" version >nul 2>&1
+            if !errorLevel! equ 0 (
+                set "NSSM_CMD=%%~fC"
+                :: Ensure working binary is copied to APP_DIR if missing or broken there
+                if /i not "%%~fC"=="%APP_DIR%nssm.exe" (
+                    copy /Y "%%~fC" "%APP_DIR%nssm.exe" >nul 2>&1
+                )
+            )
+        )
+    )
+)
+
+if not defined NSSM_CMD (
     where nssm >nul 2>&1
-    if !errorLevel! equ 0 set "NSSM_CMD=nssm"
+    if !errorLevel! equ 0 (
+        nssm version >nul 2>&1
+        if !errorLevel! equ 0 set "NSSM_CMD=nssm"
+    )
 )
 
 :: If NSSM is still missing, attempt automated download via PowerShell

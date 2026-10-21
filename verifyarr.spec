@@ -31,6 +31,7 @@ hiddenimports = [
     "src.routers",
     "src.routers.settings",
     "src.services",
+    "src.services.binary_resolver",
     "src.services.prober",
     "src.services.visual_check",
     "src.services.verifier",

@@ -81,10 +81,16 @@ jobs:
           } else {
             Write-Host "Downloading NSSM via Chocolatey fallback..."
             choco install nssm --no-progress -y
-            $nssmCmd = Get-Command nssm -ErrorAction SilentlyContinue
-            $nssmPath = if ($nssmCmd) { $nssmCmd.Source } else { "C:\ProgramData\chocolatey\bin\nssm.exe" }
-            Copy-Item $nssmPath "dist/verifyarr/nssm.exe" -Force
-            Copy-Item $nssmPath "dist/verifyarr/scripts/windows/nssm.exe" -Force
+            $realNssm = Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "nssm.exe" -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like "*win64*" } | Select-Object -First 1
+            if (-not $realNssm) {
+              $realNssm = Get-ChildItem "C:\ProgramData\chocolatey\lib" -Filter "nssm.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if ($realNssm -and (Get-Item $realNssm.FullName).Length -gt 100000) {
+              Copy-Item $realNssm.FullName "dist/verifyarr/nssm.exe" -Force
+              Copy-Item $realNssm.FullName "dist/verifyarr/scripts/windows/nssm.exe" -Force
+            } else {
+              throw "Could not locate real nssm.exe binary from Chocolatey"
+            }
           }
 
       - name: Create Verifyarr-windows-x64.zip archive

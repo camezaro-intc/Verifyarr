@@ -75,6 +75,16 @@
     }
     .field input:focus, .mapping-input:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
+    /* Binary Action Group */
+    .binary-action-group { display: flex; gap: 8px; align-items: center; }
+    .binary-action-group input { flex: 1; }
+    .btn-secondary {
+      background: rgba(51, 65, 85, 0.8); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.65rem 1rem; font-size: 12px; font-weight: 600; cursor: pointer;
+      white-space: nowrap; transition: all .15s ease;
+    }
+    .btn-secondary:hover { background: rgba(71, 85, 105, 1); border-color: var(--accent); color: #fff; }
+
     /* Password input with toggle button */
     .input-with-action { position: relative; display: flex; align-items: center; }
     .input-with-action input { padding-right: 44px; }
@@ -148,14 +158,81 @@
     .save-bar-actions { display: flex; align-items: center; gap: 12px; }
     button.btn-primary {
       background: var(--accent); color: #fff; font-weight: 600; border: 1px solid var(--accent);
-      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35); padding: 8px 20px;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35); padding: 8px 20px; border-radius: 8px;
     }
     button.btn-primary:hover { background: var(--accent-hover); }
+
+    /* File Browser Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); z-index: 1000;
+      display: none; align-items: center; justify-content: center; backdrop-filter: blur(4px);
+    }
+    .modal-backdrop.open { display: flex; animation: fadeIn .15s ease-out; }
+    .modal-window {
+      background: #1e293b; border: 1px solid #334155; border-radius: 12px; width: 90%; max-width: 720px;
+      max-height: 85vh; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    }
+    .modal-header {
+      padding: 16px 20px; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between;
+    }
+    .modal-header h4 { margin: 0; font-size: 16px; color: #f8fafc; display: flex; align-items: center; gap: 8px; }
+    .modal-header .lock-badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(16, 185, 129, 0.15);
+      color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 700;
+    }
+    .modal-close-btn {
+      background: transparent; border: 0; color: #94a3b8; font-size: 18px; cursor: pointer; padding: 4px;
+    }
+    .modal-close-btn:hover { color: #fff; }
+    .modal-nav {
+      padding: 12px 20px; background: #0f172a; border-bottom: 1px solid #334155;
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .modal-nav select {
+      background: #1e293b; color: #f8fafc; border: 1px solid #334155; padding: 6px 10px;
+      border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .modal-nav .current-path-text {
+      flex: 1; font-family: monospace; font-size: 12px; color: #94a3b8; background: #1e293b;
+      padding: 6px 10px; border-radius: 6px; border: 1px solid #334155; word-break: break-all;
+    }
+    .modal-body {
+      padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 280px; max-height: 50vh;
+    }
+    .fb-section-title { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: #94a3b8; margin: 12px 0 6px; font-weight: 700; }
+    .fb-section-title:first-child { margin-top: 0; }
+    .fb-list { list-style: none; margin: 0; padding: 0; }
+    .fb-item {
+      display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
+      border-radius: 6px; margin-bottom: 4px; transition: background .15s; font-size: 13px;
+    }
+    .fb-folder { cursor: pointer; color: #e2e8f0; }
+    .fb-folder:hover { background: rgba(51, 65, 85, 0.6); color: #60a5fa; }
+    .fb-folder-icon { width: 16px; height: 16px; stroke: #60a5fa; fill: none; stroke-width: 2; margin-right: 8px; flex-shrink: 0; vertical-align: middle; }
+    .fb-matching-file {
+      background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px;
+      padding: 10px 14px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .fb-matching-info { display: flex; align-items: center; gap: 10px; font-weight: 600; color: #34d399; }
+    .fb-matching-icon { width: 18px; height: 18px; stroke: #34d399; fill: none; stroke-width: 2; }
+    .btn-select-file {
+      background: #10b981; color: #0b0d11; border: 0; border-radius: 6px; padding: 6px 14px;
+      font-weight: 700; font-size: 12px; cursor: pointer; transition: filter .15s;
+    }
+    .btn-select-file:hover { filter: brightness(1.15); }
+    .no-match-alert {
+      padding: 14px; background: rgba(51, 65, 85, 0.3); border: 1px dashed #475569;
+      border-radius: 8px; color: #94a3b8; font-size: 12px; text-align: center; margin-top: 10px;
+    }
+    .modal-footer {
+      padding: 12px 20px; border-top: 1px solid #334155; display: flex; justify-content: flex-end; gap: 10px;
+    }
 
     @media (max-width: 768px) {
       .tabs-nav { flex-direction: column; }
       .tab-btn { width: 100%; justify-content: flex-start; }
       .save-bar-inner { flex-direction: column; align-items: stretch; }
+      .binary-action-group { flex-direction: column; align-items: stretch; }
     }
 {% endblock %}
 
@@ -433,24 +510,42 @@
     <div id="tab-system" class="tab-panel" role="tabpanel">
       <section class="section-card">
         <h3>System Binaries</h3>
-        <p class="desc">Paths to media probing utilities. Leave blank to automatically discover them on the system PATH.</p>
+        <p class="desc">Tiered binary discovery: Manual path override &gt; System PATH &gt; Known standard vendor directories (Jellyfin, Chocolatey, Program Files).</p>
 
+        <!-- ffprobe -->
         <div class="field">
           <label for="ffprobe_path">ffprobe Executable Path</label>
-          <input type="text" id="ffprobe_path" placeholder="Leave blank for PATH discovery (e.g. C:\ffmpeg\bin\ffprobe.exe)"
-                 value="{{ settings.binaries.ffprobe_path }}">
+          <div class="binary-action-group">
+            <input type="text" id="ffprobe_path" placeholder="Leave blank for auto-detect (e.g. C:\Program Files\Jellyfin\Server\ffprobe.exe)"
+                   value="{{ settings.binaries.ffprobe_path }}">
+            <button type="button" class="btn-secondary" onclick="autoDetectBinary('ffprobe')">Auto-Detect</button>
+            <button type="button" class="btn-secondary" onclick="openFileBrowser('ffprobe_path', 'ffprobe.exe')">Browse...</button>
+          </div>
+          <small>Manual override for ffprobe. Auto-Detect searches System PATH and common directories.</small>
         </div>
 
+        <!-- ffmpeg -->
         <div class="field">
           <label for="ffmpeg_path">ffmpeg Executable Path</label>
-          <input type="text" id="ffmpeg_path" placeholder="Leave blank for PATH discovery (e.g. C:\ffmpeg\bin\ffmpeg.exe)"
-                 value="{{ settings.binaries.ffmpeg_path }}">
+          <div class="binary-action-group">
+            <input type="text" id="ffmpeg_path" placeholder="Leave blank for auto-detect (e.g. C:\Program Files\Jellyfin\Server\ffmpeg.exe)"
+                   value="{{ settings.binaries.ffmpeg_path }}">
+            <button type="button" class="btn-secondary" onclick="autoDetectBinary('ffmpeg')">Auto-Detect</button>
+            <button type="button" class="btn-secondary" onclick="openFileBrowser('ffmpeg_path', 'ffmpeg.exe')">Browse...</button>
+          </div>
+          <small>Manual override for ffmpeg used for freeze frame sampling and video inspection.</small>
         </div>
 
+        <!-- tesseract -->
         <div class="field">
           <label for="tesseract_path">Tesseract Executable Path (Optional for OCR)</label>
-          <input type="text" id="tesseract_path" placeholder="Leave blank for PATH discovery"
-                 value="{{ settings.binaries.tesseract_path }}">
+          <div class="binary-action-group">
+            <input type="text" id="tesseract_path" placeholder="Leave blank for auto-detect (e.g. C:\Program Files\Tesseract-OCR\tesseract.exe)"
+                   value="{{ settings.binaries.tesseract_path }}">
+            <button type="button" class="btn-secondary" onclick="autoDetectBinary('tesseract')">Auto-Detect</button>
+            <button type="button" class="btn-secondary" onclick="openFileBrowser('tesseract_path', 'tesseract.exe')">Browse...</button>
+          </div>
+          <small>Manual override for Tesseract OCR binary used for Tier 3B credit scanning.</small>
         </div>
       </section>
 
@@ -499,6 +594,34 @@
     </div>
   </form>
 </div>
+
+<!-- Restricted File Browser Modal -->
+<div id="file-browser-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="fb-modal-title">
+  <div class="modal-window">
+    <div class="modal-header">
+      <h4 id="fb-modal-title">
+        <svg style="width:18px;height:18px;stroke:#60a5fa;fill:none;stroke-width:2" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+        <span id="fb-title-text">Select Executable</span>
+        <span class="lock-badge">Strict File Lock</span>
+      </h4>
+      <button type="button" class="modal-close-btn" onclick="closeFileBrowser()" title="Close">&times;</button>
+    </div>
+    <div class="modal-nav">
+      <select id="fb-drive-select" onchange="loadBrowserPath(this.value)" title="Select Drive"></select>
+      <button type="button" class="btn-secondary" id="fb-parent-btn" onclick="goToParentFolder()" title="Up one folder">&#8679; Parent</button>
+      <div class="current-path-text" id="fb-current-path">C:\</div>
+    </div>
+    <div class="modal-body" id="fb-modal-body">
+      <!-- Injected matching executables and subdirectories -->
+      <div id="fb-matching-container"></div>
+      <div class="fb-section-title">Directories</div>
+      <ul class="fb-list" id="fb-folder-list"></ul>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn-secondary" onclick="closeFileBrowser()">Cancel</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -538,6 +661,152 @@
       btn.innerHTML = isPassword
         ? '<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>'
         : '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
+    }
+
+    // Auto-detect system binaries
+    async function autoDetectBinary(binaryName) {
+      toast('Querying system and common paths for ' + binaryName + '...', 'info', 2000);
+      try {
+        const res = await fetch('/api/v1/system/detect-binaries');
+        const data = await res.json();
+        const found = data[binaryName];
+        if (found) {
+          document.getElementById(binaryName + '_path').value = found;
+          toast('✓ Auto-detected ' + binaryName + ': ' + found, 'success', 4000);
+        } else {
+          toast('✗ Could not auto-detect ' + binaryName + '. Please browse or enter manual path.', 'error', 5000);
+        }
+      } catch (err) {
+        toast('Failed auto-detect: ' + err.message, 'error', 4000);
+      }
+    }
+
+    // Restricted File Browser Modal Logic
+    let _fbTargetInputId = '';
+    let _fbTargetBinary = '';
+    let _fbCurrentPath = '';
+    let _fbParentPath = null;
+
+    function openFileBrowser(inputId, targetBinary) {
+      _fbTargetInputId = inputId;
+      _fbTargetBinary = targetBinary;
+      document.getElementById('fb-title-text').textContent = 'Select ' + targetBinary;
+
+      // Start in existing path's directory if present, otherwise default root
+      let initialPath = '';
+      const existingVal = document.getElementById(inputId).value.trim();
+      if (existingVal) {
+        const parts = existingVal.split(/[\\/]/);
+        parts.pop(); // Remove file name
+        initialPath = parts.join('\\');
+      }
+
+      document.getElementById('file-browser-modal').classList.add('open');
+      loadBrowserPath(initialPath);
+    }
+
+    function closeFileBrowser() {
+      document.getElementById('file-browser-modal').classList.remove('open');
+    }
+
+    function goToParentFolder() {
+      if (_fbParentPath) {
+        loadBrowserPath(_fbParentPath);
+      }
+    }
+
+    async function loadBrowserPath(path) {
+      const pathDisplay = document.getElementById('fb-current-path');
+      const folderList = document.getElementById('fb-folder-list');
+      const matchingContainer = document.getElementById('fb-matching-container');
+      const parentBtn = document.getElementById('fb-parent-btn');
+      const driveSelect = document.getElementById('fb-drive-select');
+
+      pathDisplay.textContent = 'Loading...';
+      folderList.innerHTML = '<li class="fb-item">Loading directories...</li>';
+      matchingContainer.innerHTML = '';
+
+      try {
+        const url = '/api/v1/system/browse-fs?path=' + encodeURIComponent(path || '') + '&target_binary=' + encodeURIComponent(_fbTargetBinary);
+        const res = await fetch(url);
+        const data = await res.json();
+
+        _fbCurrentPath = data.current_path;
+        _fbParentPath = data.parent_path;
+        pathDisplay.textContent = data.current_path;
+        parentBtn.disabled = !_fbParentPath;
+
+        // Populate drives selector
+        driveSelect.innerHTML = '';
+        data.drives.forEach(d => {
+          const opt = document.createElement('option');
+          opt.value = d;
+          opt.textContent = d;
+          if (data.current_path.toUpperCase().startsWith(d.toUpperCase())) {
+            opt.selected = true;
+          }
+          driveSelect.appendChild(opt);
+        });
+
+        // Render matching locked files
+        if (data.matching_files && data.matching_files.length > 0) {
+          matchingContainer.innerHTML = '<div class="fb-section-title">Matching Executable (Click to Select)</div>';
+          data.matching_files.forEach(fileName => {
+            const separator = _fbCurrentPath.endsWith('\\') || _fbCurrentPath.endsWith('/') ? '' : (_fbCurrentPath.includes('/') ? '/' : '\\');
+            const fullPath = _fbCurrentPath + separator + fileName;
+            const card = document.createElement('div');
+            card.className = 'fb-matching-file';
+            card.innerHTML = `
+              <div class="fb-matching-info">
+                <svg class="fb-matching-icon" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                <span>${fileName}</span>
+              </div>
+              <button type="button" class="btn-select-file" onclick="selectBrowserFile('${fullPath.replace(/\\/g, '\\\\')}')">Select ${fileName}</button>
+            `;
+            matchingContainer.appendChild(card);
+          });
+        } else {
+          matchingContainer.innerHTML = `
+            <div class="no-match-alert">
+              No matching <strong>${_fbTargetBinary}</strong> found in this directory. Navigate to the folder containing it.
+            </div>
+          `;
+        }
+
+        // Render directories
+        folderList.innerHTML = '';
+        if (data.directories && data.directories.length > 0) {
+          data.directories.forEach(dirName => {
+            const separator = _fbCurrentPath.endsWith('\\') || _fbCurrentPath.endsWith('/') ? '' : (_fbCurrentPath.includes('/') ? '/' : '\\');
+            const targetPath = _fbCurrentPath + separator + dirName;
+            const li = document.createElement('li');
+            li.className = 'fb-item fb-folder';
+            li.innerHTML = `
+              <span>
+                <svg class="fb-folder-icon" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                ${dirName}
+              </span>
+              <span style="color:#64748b;font-size:11px;">&#8250;</span>
+            `;
+            li.onclick = () => loadBrowserPath(targetPath);
+            folderList.appendChild(li);
+          });
+        } else {
+          folderList.innerHTML = '<li class="fb-item" style="color:#64748b;">No subdirectories found.</li>';
+        }
+
+      } catch (err) {
+        pathDisplay.textContent = 'Error loading path';
+        folderList.innerHTML = '<li class="fb-item" style="color:var(--red);">' + err.message + '</li>';
+      }
+    }
+
+    function selectBrowserFile(selectedPath) {
+      if (_fbTargetInputId) {
+        document.getElementById(_fbTargetInputId).value = selectedPath;
+        toast('✓ Selected: ' + selectedPath, 'success');
+      }
+      closeFileBrowser();
     }
 
     // Dynamic path mappings
@@ -619,8 +888,35 @@
       return JSON.stringify(detail);
     }
 
+    function validateExecutableFilename(pathVal, expectedBinary) {
+      if (!pathVal) return true;
+      const clean = pathVal.trim().toLowerCase();
+      const filename = clean.split(/[\\/]/).pop();
+      const base = expectedBinary.replace(/\.exe$/i, '').toLowerCase();
+      return filename === base || filename === base + '.exe';
+    }
+
     async function saveSettings(event) {
       event.preventDefault();
+
+      const ffprobeVal = document.getElementById('ffprobe_path').value.trim();
+      const ffmpegVal = document.getElementById('ffmpeg_path').value.trim();
+      const tesseractVal = document.getElementById('tesseract_path').value.trim();
+
+      // Enforce file lock validation on manual input
+      if (!validateExecutableFilename(ffprobeVal, 'ffprobe.exe')) {
+        toast('Validation Error: ffprobe path must point to ffprobe.exe (or ffprobe)', 'error', 5500);
+        return;
+      }
+      if (!validateExecutableFilename(ffmpegVal, 'ffmpeg.exe')) {
+        toast('Validation Error: ffmpeg path must point to ffmpeg.exe (or ffmpeg)', 'error', 5500);
+        return;
+      }
+      if (!validateExecutableFilename(tesseractVal, 'tesseract.exe')) {
+        toast('Validation Error: tesseract path must point to tesseract.exe (or tesseract)', 'error', 5500);
+        return;
+      }
+
       const topBtn = document.getElementById('save-btn-top');
       const bottomBtn = document.getElementById('save-btn-bottom');
       topBtn.disabled = true;
@@ -661,9 +957,9 @@
           discord_webhook_url: document.getElementById('discord_webhook_url').value.trim()
         },
         binaries: {
-          ffprobe_path: document.getElementById('ffprobe_path').value.trim(),
-          ffmpeg_path: document.getElementById('ffmpeg_path').value.trim(),
-          tesseract_path: document.getElementById('tesseract_path').value.trim()
+          ffprobe_path: ffprobeVal,
+          ffmpeg_path: ffmpegVal,
+          tesseract_path: tesseractVal
         },
         path_mappings: collectMappings()
       };

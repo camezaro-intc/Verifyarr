@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import copy
 import logging
+import os
+import sys
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
@@ -222,3 +225,86 @@ async def test_connection(request: Request) -> JSONResponse:
         else "unknown"
     )
     return JSONResponse({"status": "ok", "version": version})
+
+
+def _get_system_drives() -> list[str]:
+    """Return available root drives (e.g. ['C:\\', 'E:\\'] on Windows, ['/'] on POSIX)."""
+    if sys.platform == "win32":
+        import string
+
+        drives = []
+        for letter in string.ascii_uppercase:
+            candidate = f"{letter}:\\"
+            if os.path.exists(candidate):
+                drives.append(candidate)
+        return drives or ["C:\\"]
+    return ["/"]
+
+
+@router.get("/api/v1/system/detect-binaries")
+def detect_binaries() -> dict[str, str | None]:
+    """Auto-detect standard locations and system PATH for ffprobe, ffmpeg, and tesseract."""
+    from src.services.binary_resolver import resolve_binary
+
+    result: dict[str, str | None] = {}
+    for name in ("ffprobe", "ffmpeg", "tesseract"):
+        resolved = resolve_binary(name)
+        result[name] = str(resolved) if resolved else None
+    return result
+
+
+@router.get("/api/v1/system/browse-fs")
+def browse_fs(
+    path: str = "",
+    target_binary: str = "",
+) -> dict[str, Any]:
+    """Browse the filesystem with a strict lock that only exposes files matching target_binary."""
+    drives = _get_system_drives()
+    default_root = drives[0] if drives else "/"
+
+    if not path or not path.strip():
+        current_dir = Path(default_root).resolve()
+    else:
+        current_dir = Path(path.strip()).resolve()
+
+    if not current_dir.exists() or not current_dir.is_dir():
+        current_dir = Path(default_root).resolve()
+
+    parent_path: str | None = str(current_dir.parent) if current_dir.parent != current_dir else None
+
+    directories: list[str] = []
+    matching_files: list[str] = []
+
+    target_clean = target_binary.strip().lower()
+    expected_names = {target_clean}
+    if target_clean.endswith(".exe"):
+        expected_names.add(target_clean[:-4])
+    else:
+        expected_names.add(f"{target_clean}.exe")
+
+    try:
+        with os.scandir(current_dir) as entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        directories.append(entry.name)
+                    elif entry.is_file(follow_symlinks=False):
+                        entry_lower = entry.name.lower()
+                        # Strict Lock Rule: only matching executables are allowed
+                        if target_clean and entry_lower in expected_names:
+                            matching_files.append(entry.name)
+                except OSError:
+                    continue
+    except (PermissionError, OSError) as exc:
+        logger.debug("Failed scanning directory %s: %s", current_dir, exc)
+
+    directories.sort(key=str.lower)
+    matching_files.sort(key=str.lower)
+
+    return {
+        "current_path": str(current_dir),
+        "parent_path": parent_path,
+        "drives": drives,
+        "directories": directories,
+        "matching_files": matching_files,
+    }

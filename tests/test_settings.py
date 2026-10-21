@@ -209,3 +209,98 @@ def test_app_config_schema_validation() -> None:
     )
     assert cfg.verification.dry_run is False
     assert cfg.verification.runtime_delta_threshold_minutes == 18
+
+
+def test_detect_binaries_endpoint(tmp_path: Path) -> None:
+    app = create_app(_make_test_settings(tmp_path))
+    with TestClient(app) as client:
+        res = client.get("/api/v1/system/detect-binaries")
+        assert res.status_code == 200
+        data = res.json()
+        assert "ffprobe" in data
+        assert "ffmpeg" in data
+        assert "tesseract" in data
+        for name in ("ffprobe", "ffmpeg", "tesseract"):
+            assert data[name] is None or isinstance(data[name], str)
+
+
+def test_browse_fs_endpoint_strict_file_lock(tmp_path: Path) -> None:
+    scan_dir = tmp_path / "browse_test"
+    scan_dir.mkdir()
+    (scan_dir / "subfolder_a").mkdir()
+    (scan_dir / "subfolder_b").mkdir()
+    (scan_dir / "ffprobe.exe").write_text("dummy binary", encoding="utf-8")
+    (scan_dir / "ffmpeg.exe").write_text("dummy binary", encoding="utf-8")
+    (scan_dir / "tesseract.exe").write_text("dummy binary", encoding="utf-8")
+    (scan_dir / "unrelated_file.txt").write_text("text", encoding="utf-8")
+    (scan_dir / "malicious.exe").write_text("bad", encoding="utf-8")
+
+    app = create_app(_make_test_settings(tmp_path))
+    with TestClient(app) as client:
+        # 1. Target = ffprobe: Only ffprobe.exe should appear in matching_files
+        res = client.get(f"/api/v1/system/browse-fs?path={scan_dir}&target_binary=ffprobe")
+        assert res.status_code == 200
+        data = res.json()
+        assert "subfolder_a" in data["directories"]
+        assert "subfolder_b" in data["directories"]
+        assert data["matching_files"] == ["ffprobe.exe"]
+
+        # 2. Target = ffmpeg: Only ffmpeg.exe should appear in matching_files
+        res = client.get(f"/api/v1/system/browse-fs?path={scan_dir}&target_binary=ffmpeg")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["matching_files"] == ["ffmpeg.exe"]
+
+        # 3. Target = tesseract: Only tesseract.exe should appear
+        res = client.get(f"/api/v1/system/browse-fs?path={scan_dir}&target_binary=tesseract")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["matching_files"] == ["tesseract.exe"]
+
+        # 4. Target = unknown/empty: No files should match
+        res = client.get(f"/api/v1/system/browse-fs?path={scan_dir}&target_binary=unknown")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["matching_files"] == []
+
+
+def test_browse_fs_fallback_invalid_path(tmp_path: Path) -> None:
+    app = create_app(_make_test_settings(tmp_path))
+    with TestClient(app) as client:
+        res = client.get("/api/v1/system/browse-fs?path=Z:\\NonExistentPath_xyz123")
+        assert res.status_code == 200
+        data = res.json()
+        assert "current_path" in data
+        assert "drives" in data
+        assert isinstance(data["drives"], list)
+        assert len(data["drives"]) >= 1
+
+
+def test_binary_resolution_hierarchy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.services.binary_resolver import resolve_binary
+
+    custom_exe = tmp_path / "custom_ffprobe.exe"
+    custom_exe.write_text("binary", encoding="utf-8")
+
+    path_exe = tmp_path / "ffprobe.exe"
+    path_exe.write_text("binary", encoding="utf-8")
+
+    # Priority 1: User-configured manual path wins
+    resolved = resolve_binary("ffprobe", custom_path=str(custom_exe))
+    assert resolved == custom_exe.resolve()
+
+    # Priority 2: When custom path is invalid, falls back to system PATH via shutil.which
+    monkeypatch.setattr("shutil.which", lambda name: str(path_exe) if name == "ffprobe" else None)
+    resolved_fallback = resolve_binary("ffprobe", custom_path=str(tmp_path / "nonexistent.exe"))
+    assert resolved_fallback == path_exe.resolve()
+
+    # Priority 3: When neither custom nor PATH exists, falls back to common directories
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    fake_common = tmp_path / "jellyfin" / "ffprobe.exe"
+    fake_common.parent.mkdir()
+    fake_common.write_text("binary", encoding="utf-8")
+    monkeypatch.setattr(
+        "src.services.binary_resolver.COMMON_PATHS", {"ffprobe": [str(fake_common)]}
+    )
+    resolved_common = resolve_binary("ffprobe")
+    assert resolved_common == fake_common.resolve()

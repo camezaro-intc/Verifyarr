@@ -58,6 +58,7 @@ The most reliable tell is the **runtime delta**: the container duration compared
 
 - **Modern Web Dashboard** at `/`: real-time view of recent verifications with timestamp, title, release name, probed vs. expected runtime, check breakdown, and failure reasons.
 - **Arr-Style Settings UI** at `/settings`: configure verification engine, analysis tiers, Servarr connections, notifications, and path mappings with live in-memory hot reloading.
+- **Tiered Binary Resolution & Locked File Browser**: Auto-detects `ffprobe`, `ffmpeg`, and `tesseract` across system `PATH` and common vendor directories (Jellyfin Server, Chocolatey, Program Files, Linux `/usr`), supports manual overrides, and provides a restricted server-side filesystem navigator.
 - **Connection Testers**: real-time API status validation for Radarr, Sonarr, and Jellyfin with password masking toggles.
 - **Force Approve**: one-click whitelist for false positives such as director's cuts and extended editions. It also triggers a Jellyfin refresh.
 - **Dry-run mode** (on by default): runs every check and records the results, but never deletes or blocklists anything.

@@ -118,24 +118,42 @@ class BinariesConfig(BaseModel):
     ffprobe_path: str = ""
     tesseract_path: str = ""
 
-    def resolve(self, name: BinaryName) -> Path | None:
-        """Locate a binary: explicit config override first, then ``shutil.which``.
+    @field_validator("ffmpeg_path")
+    @classmethod
+    def _validate_ffmpeg_filename(cls, v: str) -> str:
+        s = v.strip()
+        if s:
+            name = Path(s).name.lower()
+            if name not in {"ffmpeg", "ffmpeg.exe"}:
+                raise ValueError("ffmpeg_path must point to 'ffmpeg' or 'ffmpeg.exe'")
+        return s
 
-        ``shutil.which`` honours ``PATHEXT`` on Windows, so ``ffmpeg`` finds ``ffmpeg.exe``.
-        """
-        override = getattr(self, f"{name}_path").strip()
-        if override:
-            candidate = Path(override).expanduser()
-            if candidate.is_file():
-                return candidate
-            # Allow a bare command name or a directory-less override.
-            found = shutil.which(override)
-            if found:
-                return Path(found)
-            logger.warning("Configured %s path %s does not exist", name, override)
-            return None
-        found = shutil.which(name)
-        return Path(found) if found else None
+    @field_validator("ffprobe_path")
+    @classmethod
+    def _validate_ffprobe_filename(cls, v: str) -> str:
+        s = v.strip()
+        if s:
+            name = Path(s).name.lower()
+            if name not in {"ffprobe", "ffprobe.exe"}:
+                raise ValueError("ffprobe_path must point to 'ffprobe' or 'ffprobe.exe'")
+        return s
+
+    @field_validator("tesseract_path")
+    @classmethod
+    def _validate_tesseract_filename(cls, v: str) -> str:
+        s = v.strip()
+        if s:
+            name = Path(s).name.lower()
+            if name not in {"tesseract", "tesseract.exe"}:
+                raise ValueError("tesseract_path must point to 'tesseract' or 'tesseract.exe'")
+        return s
+
+    def resolve(self, name: BinaryName) -> Path | None:
+        """Locate a binary using tiered hierarchy: manual override -> PATH -> common dirs."""
+        from src.services.binary_resolver import resolve_binary
+
+        override = getattr(self, f"{name}_path", "").strip()
+        return resolve_binary(name, override)
 
 
 class PathMapping(BaseModel):

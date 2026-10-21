@@ -72,6 +72,28 @@ class Verifier:
         self._ffprobe = settings.binaries.resolve("ffprobe")
         self._tesseract = settings.binaries.resolve("tesseract")
 
+    def reload_settings(self, settings: Settings) -> None:
+        """Hot-reload active configuration across Verifier, Remediator, and Notifier."""
+        old_concurrency = self._cfg.max_concurrent_probes
+        self._settings = settings
+        self._cfg = settings.verification
+        self._mapper = PathMapper(settings.path_mappings)
+        if self._cfg.max_concurrent_probes != old_concurrency:
+            self._semaphore = asyncio.Semaphore(self._cfg.max_concurrent_probes)
+        self._ffmpeg = settings.binaries.resolve("ffmpeg")
+        self._ffprobe = settings.binaries.resolve("ffprobe")
+        self._tesseract = settings.binaries.resolve("tesseract")
+        if hasattr(self._remediator, "reload_settings"):
+            self._remediator.reload_settings(settings)
+        if hasattr(self._notifier, "reload_settings"):
+            self._notifier.reload_settings(settings)
+        logger.info(
+            "Hot-reloaded Verifier settings: mode=%s, runtime_delta=%g min, max_probes=%d",
+            "DRY-RUN" if self._cfg.dry_run else "ACTIVE",
+            self._cfg.runtime_delta_threshold_minutes,
+            self._cfg.max_concurrent_probes,
+        )
+
     # -- lifecycle -----------------------------------------------------------------
 
     def log_environment(self) -> None:

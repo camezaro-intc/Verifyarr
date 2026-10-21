@@ -31,6 +31,10 @@ class Notifier:
         self._client = client or httpx.AsyncClient(timeout=httpx.Timeout(15.0))
         self._pending_refresh: asyncio.Task[None] | None = None
 
+    def reload_settings(self, settings: Settings) -> None:
+        """Update the active settings reference in memory."""
+        self._settings = settings
+
     async def aclose(self) -> None:
         if self._pending_refresh and not self._pending_refresh.done():
             self._pending_refresh.cancel()

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Verifyarr{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --border: #2a2f3a;
+      --text: #e6e9ef; --muted: #8b93a3; --accent: #6aa9ff;
+      --green: #2ecc71; --red: #e74c3c; --amber: #f39c12; --grey: #7f8c8d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between;
+             padding: 16px 28px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    .header-left { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
+    h1 a { color: var(--text); text-decoration: none; }
+    h1 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+    nav.top-nav { display: flex; gap: 8px; align-items: center; }
+    nav.top-nav a { color: var(--muted); text-decoration: none; padding: 6px 14px; border-radius: 6px;
+                    font-weight: 600; font-size: 13px; border: 1px solid transparent; transition: all .15s ease; }
+    nav.top-nav a:hover { color: var(--text); background: var(--panel-2); }
+    nav.top-nav a.active { color: var(--accent); background: rgba(106,169,255,.1); border-color: rgba(106,169,255,.35); }
+    .mode { padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid; letter-spacing: .4px; }
+    .mode.dry { color: var(--amber); border-color: var(--amber); background: rgba(243,156,18,.1); }
+    .mode.live { color: var(--green); border-color: var(--green); background: rgba(46,204,113,.1); }
+    main { padding: 24px 28px; max-width: 1500px; margin: 0 auto; }
+    button { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px;
+             padding: 6px 14px; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; transition: all .15s ease; }
+    button:hover { background: var(--accent); color: #0b0d11; }
+    button:disabled { opacity: .5; cursor: wait; }
+    button.btn-primary { background: var(--accent); color: #0b0d11; }
+    button.btn-primary:hover { filter: brightness(1.1); }
+    button.btn-danger { color: var(--red); border-color: var(--red); }
+    button.btn-danger:hover { background: var(--red); color: #fff; }
+    #toast { position: fixed; bottom: 22px; right: 22px; max-width: 460px; z-index: 1000;
+             background: var(--panel-2); border: 1px solid var(--border);
+             padding: 12px 18px; border-radius: 8px; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.45);
+             font-weight: 500; }
+    #toast.success { border-color: var(--green); color: #d5f5e3; background: #132a1f; }
+    #toast.error { border-color: var(--red); color: #fadbd8; background: #2c1518; }
+    @media (max-width: 700px) { header, main { padding-left: 14px; padding-right: 14px; } }
+    {% block extra_css %}{% endblock %}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <h1><a href="/">Verifyarr</a> <small>v{{ version }}</small></h1>
+      <nav class="top-nav" aria-label="Main Navigation">
+        <a href="/" class="{{ 'active' if active_page == 'dashboard' else '' }}">History / Dashboard</a>
+        <a href="/settings" class="{{ 'active' if active_page == 'settings' else '' }}">Settings</a>
+      </nav>
+    </div>
+    {% if dry_run %}
+      <span id="header-mode-badge" class="mode dry" title="Failures are logged but nothing is deleted or blocklisted">DRY-RUN</span>
+    {% else %}
+      <span id="header-mode-badge" class="mode live" title="Failures delete, blocklist and re-search">ACTIVE MODE</span>
+    {% endif %}
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script>
+    let _toastTimer = null;
+    function toast(message, kind = 'success', durationMs = 4000) {
+      const el = document.getElementById('toast');
+      el.textContent = message;
+      el.className = kind === 'error' ? 'error' : 'success';
+      el.style.display = 'block';
+      if (_toastTimer) clearTimeout(_toastTimer);
+      _toastTimer = setTimeout(() => { el.style.display = 'none'; }, durationMs);
+    }
+
+    function updateHeaderModeBadge(isDryRun) {
+      const badge = document.getElementById('header-mode-badge');
+      if (!badge) return;
+      if (isDryRun) {
+        badge.className = 'mode dry';
+        badge.textContent = 'DRY-RUN';
+        badge.title = 'Failures are logged but nothing is deleted or blocklisted';
+      } else {
+        badge.className = 'mode live';
+        badge.textContent = 'ACTIVE MODE';
+        badge.title = 'Failures delete, blocklist and re-search';
+      }
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

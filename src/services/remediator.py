@@ -24,6 +24,10 @@ class Remediator:
         self._settings = settings
         self._client = client or httpx.AsyncClient(timeout=httpx.Timeout(30.0))
 
+    def reload_settings(self, settings: Settings) -> None:
+        """Update the active settings reference in memory."""
+        self._settings = settings
+
     async def aclose(self) -> None:
         await self._client.aclose()
 

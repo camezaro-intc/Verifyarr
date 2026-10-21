@@ -19,6 +19,7 @@ from src import __version__
 from src.config import Settings, load_settings
 from src.models.history import HistoryStore, VerificationStatus
 from src.models.servarr import ServarrWebhookPayload, extract_fallback_jobs
+from src.routers.settings import router as settings_router
 from src.services.notifier import Notifier
 from src.services.remediator import Remediator
 from src.services.verifier import Verifier
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         app.state.settings = active
         app.state.history = history
+        app.state.remediator = remediator
         app.state.notifier = notifier
         app.state.verifier = verifier
         try:
@@ -88,6 +90,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="Verifyarr", version=__version__, lifespan=lifespan)
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+    app.state.templates = templates
+    app.include_router(settings_router)
 
     @app.get("/health")
     async def health(request: Request) -> dict[str, Any]:
@@ -202,6 +206,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "dry_run": request.app.state.settings.verification.dry_run,
                 "version": __version__,
                 "limit": DASHBOARD_LIMIT,
+                "active_page": "dashboard",
             },
         )
 

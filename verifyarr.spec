@@ -28,6 +28,8 @@ hiddenimports = [
     "src.models",
     "src.models.servarr",
     "src.models.history",
+    "src.routers",
+    "src.routers.settings",
     "src.services",
     "src.services.prober",
     "src.services.visual_check",

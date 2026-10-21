@@ -1,26 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verifyarr</title>
-  <style>
-    :root {
-      --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --border: #2a2f3a;
-      --text: #e6e9ef; --muted: #8b93a3; --accent: #6aa9ff;
-      --green: #2ecc71; --red: #e74c3c; --amber: #f39c12; --grey: #7f8c8d;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text);
-           font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
-             padding: 20px 28px; border-bottom: 1px solid var(--border); background: var(--panel); }
-    h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
-    h1 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
-    .mode { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid; }
-    .mode.dry { color: var(--amber); border-color: var(--amber); }
-    .mode.live { color: var(--green); border-color: var(--green); }
-    main { padding: 24px 28px; max-width: 1500px; margin: 0 auto; }
+{% extends "base.html" %}
+{% block title %}Verifyarr — Dashboard{% endblock %}
+{% block extra_css %}
     .stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
     .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; min-width: 110px; }
     .stat b { display: block; font-size: 22px; }
@@ -49,27 +29,10 @@
     details summary { cursor: pointer; font-size: 12px; }
     details ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
     .ok { color: var(--green); } .fail { color: var(--red); } .skip { color: var(--grey); }
-    button { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px;
-             padding: 5px 12px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
-    button:hover { background: var(--accent); color: #0b0d11; }
-    button:disabled { opacity: .5; cursor: wait; }
     .empty { padding: 40px; text-align: center; color: var(--muted); }
-    #toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel-2); border: 1px solid var(--border);
-             padding: 10px 16px; border-radius: 8px; display: none; }
-    @media (max-width: 700px) { header, main { padding-left: 14px; padding-right: 14px; } }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Verifyarr <small>v{{ version }}</small></h1>
-    {% if dry_run %}
-      <span class="mode dry" title="Failures are logged but nothing is deleted or blocklisted">DRY-RUN MODE</span>
-    {% else %}
-      <span class="mode live" title="Failures delete, blocklist and re-search">ACTIVE MODE</span>
-    {% endif %}
-  </header>
+{% endblock %}
 
-  <main>
+{% block content %}
     <section class="stats">
       <div class="stat"><b>{{ counts.PASSED }}</b><span>Passed</span></div>
       <div class="stat"><b>{{ counts.REJECTED }}</b><span>Rejected</span></div>
@@ -139,16 +102,10 @@
       <div class="empty">No verifications yet. Point a Radarr/Sonarr webhook (On Import / On Upgrade) at <code>/api/v1/webhook</code>.</div>
       {% endif %}
     </div>
-  </main>
+{% endblock %}
 
-  <div id="toast"></div>
+{% block scripts %}
   <script>
-    function toast(message) {
-      const el = document.getElementById('toast');
-      el.textContent = message;
-      el.style.display = 'block';
-      setTimeout(() => { el.style.display = 'none'; }, 3500);
-    }
     async function forceApprove(id, button) {
       if (!confirm('Whitelist this release and treat it as a false positive?')) return;
       button.disabled = true;
@@ -156,13 +113,12 @@
         const res = await fetch('/api/v1/whitelist/' + id, { method: 'POST' });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
-        toast(data.message + (data.jellyfin_refreshed ? ' - Jellyfin refresh requested' : ''));
+        toast(data.message + (data.jellyfin_refreshed ? ' - Jellyfin refresh requested' : ''), 'success');
         setTimeout(() => location.reload(), 900);
       } catch (err) {
         button.disabled = false;
-        toast('Failed: ' + err.message);
+        toast('Failed: ' + err.message, 'error');
       }
     }
   </script>
-</body>
-</html>
+{% endblock %}

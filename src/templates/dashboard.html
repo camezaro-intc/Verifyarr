@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verifyarr</title>
+  <style>
+    :root {
+      --bg: #0f1115; --panel: #171a21; --panel-2: #1e222b; --border: #2a2f3a;
+      --text: #e6e9ef; --muted: #8b93a3; --accent: #6aa9ff;
+      --green: #2ecc71; --red: #e74c3c; --amber: #f39c12; --grey: #7f8c8d;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 14px/1.5 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+             padding: 20px 28px; border-bottom: 1px solid var(--border); background: var(--panel); }
+    h1 { margin: 0; font-size: 20px; letter-spacing: .3px; }
+    h1 small { color: var(--muted); font-weight: 400; font-size: 12px; margin-left: 8px; }
+    .mode { padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; border: 1px solid; }
+    .mode.dry { color: var(--amber); border-color: var(--amber); }
+    .mode.live { color: var(--green); border-color: var(--green); }
+    main { padding: 24px 28px; max-width: 1500px; margin: 0 auto; }
+    .stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+    .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; min-width: 110px; }
+    .stat b { display: block; font-size: 22px; }
+    .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; color: var(--muted); }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
+    th { background: var(--panel-2); color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: rgba(255,255,255,.025); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; word-break: break-all; }
+    .muted { color: var(--muted); }
+    .nowrap { white-space: nowrap; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700;
+             letter-spacing: .5px; border: 1px solid; }
+    .badge.PASSED { color: var(--green); border-color: var(--green); background: rgba(46,204,113,.12); }
+    .badge.REJECTED { color: var(--red); border-color: var(--red); background: rgba(231,76,60,.12); }
+    .badge.DRY_RUN { color: var(--amber); border-color: var(--amber); background: rgba(243,156,18,.12); }
+    .badge.ERROR { color: var(--grey); border-color: var(--grey); background: rgba(127,140,141,.12); }
+    .chip { display: inline-block; margin-left: 6px; font-size: 11px; color: var(--accent); }
+    .runtime.bad { color: var(--red); font-weight: 600; }
+    ul.reasons { margin: 0; padding-left: 18px; }
+    ul.reasons li { color: #f1a9a0; }
+    details { margin-top: 6px; color: var(--muted); }
+    details summary { cursor: pointer; font-size: 12px; }
+    details ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
+    .ok { color: var(--green); } .fail { color: var(--red); } .skip { color: var(--grey); }
+    button { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px;
+             padding: 5px 12px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+    button:hover { background: var(--accent); color: #0b0d11; }
+    button:disabled { opacity: .5; cursor: wait; }
+    .empty { padding: 40px; text-align: center; color: var(--muted); }
+    #toast { position: fixed; bottom: 20px; right: 20px; background: var(--panel-2); border: 1px solid var(--border);
+             padding: 10px 16px; border-radius: 8px; display: none; }
+    @media (max-width: 700px) { header, main { padding-left: 14px; padding-right: 14px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Verifyarr <small>v{{ version }}</small></h1>
+    {% if dry_run %}
+      <span class="mode dry" title="Failures are logged but nothing is deleted or blocklisted">DRY-RUN MODE</span>
+    {% else %}
+      <span class="mode live" title="Failures delete, blocklist and re-search">ACTIVE MODE</span>
+    {% endif %}
+  </header>
+
+  <main>
+    <section class="stats">
+      <div class="stat"><b>{{ counts.PASSED }}</b><span>Passed</span></div>
+      <div class="stat"><b>{{ counts.REJECTED }}</b><span>Rejected</span></div>
+      <div class="stat"><b>{{ counts.DRY_RUN }}</b><span>Dry run</span></div>
+      <div class="stat"><b>{{ counts.ERROR }}</b><span>Errors</span></div>
+    </section>
+
+    <div class="toolbar">
+      <span>Last {{ limit }} verifications</span>
+      <button type="button" onclick="location.reload()">Refresh</button>
+    </div>
+
+    <div class="table-wrap">
+      {% if entries %}
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th><th>Title</th><th>Release Name</th>
+            <th>Runtime (probed / expected)</th><th>Result</th><th>Details</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in entries %}
+          {% set runtime_bad = e.failure_reasons and e.checks and e.checks[0].tier == 1 and not e.checks[0].passed %}
+          <tr id="row-{{ e.id }}">
+            <td class="nowrap muted">{{ e.timestamp_display }}</td>
+            <td><strong>{{ e.title }}</strong><br><span class="muted">{{ e.app }}</span></td>
+            <td class="mono">{{ e.release_name }}</td>
+            <td class="nowrap runtime {{ 'bad' if runtime_bad else '' }}">
+              {% if e.probed_runtime_min is not none %}{{ '%.1f'|format(e.probed_runtime_min) }}{% else %}&ndash;{% endif %}
+              /
+              {% if e.expected_runtime_min %}{{ '%.0f'|format(e.expected_runtime_min) }}{% else %}&ndash;{% endif %} min
+            </td>
+            <td class="nowrap">
+              <span class="badge {{ e.status.value }}">{{ e.status.value }}</span>
+              {% if e.whitelisted %}<span class="chip" title="Force-approved by user">&#10003; whitelisted</span>{% endif %}
+            </td>
+            <td>
+              {% if e.failure_reasons %}
+              <ul class="reasons">{% for r in e.failure_reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+              {% endif %}
+              {% if e.checks or e.remediation %}
+              <details>
+                <summary>Checks &amp; actions</summary>
+                <ul>
+                  {% for c in e.checks %}
+                  <li class="{{ 'skip' if c.skipped else ('ok' if c.passed else 'fail') }}">
+                    T{{ c.tier }} {{ c.name }}: {{ c.detail }}{% if c.skipped %} (skipped){% endif %}
+                  </li>
+                  {% endfor %}
+                  {% for a in e.remediation %}<li class="muted">&rarr; {{ a }}</li>{% endfor %}
+                </ul>
+              </details>
+              {% endif %}
+            </td>
+            <td class="nowrap">
+              {% if e.can_force_approve %}
+              <button type="button" onclick="forceApprove({{ e.id }}, this)"
+                      title="Whitelist this release (e.g. director's cut / extended edition)">Force Approve</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">No verifications yet. Point a Radarr/Sonarr webhook (On Import / On Upgrade) at <code>/api/v1/webhook</code>.</div>
+      {% endif %}
+    </div>
+  </main>
+
+  <div id="toast"></div>
+  <script>
+    function toast(message) {
+      const el = document.getElementById('toast');
+      el.textContent = message;
+      el.style.display = 'block';
+      setTimeout(() => { el.style.display = 'none'; }, 3500);
+    }
+    async function forceApprove(id, button) {
+      if (!confirm('Whitelist this release and treat it as a false positive?')) return;
+      button.disabled = true;
+      try {
+        const res = await fetch('/api/v1/whitelist/' + id, { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || ('HTTP ' + res.status));
+        toast(data.message + (data.jellyfin_refreshed ? ' - Jellyfin refresh requested' : ''));
+        setTimeout(() => location.reload(), 900);
+      } catch (err) {
+        button.disabled = false;
+        toast('Failed: ' + err.message);
+      }
+    }
+  </script>
+</body>
+</html>

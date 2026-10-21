@@ -1,0 +1,82 @@
+name: Feature request
+description: Propose a new verification tier or a companion integration
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Describe the problem first; the best solution often follows from it.
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: What kind of request is this?
+      options:
+        - New verification check / tier
+        - Improvement to an existing check (Tier 1-3)
+        - Companion integration (e.g. Jellyfin, Plex, Emby, Bazarr, Lidarr)
+        - Notification target
+        - Dashboard / UI
+        - Deployment / packaging
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What bad media or workflow gap are you trying to solve? Example releases help a lot.
+      placeholder: "Some releases pass the runtime check but are cam recordings with burned-in subtitles..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How should it work? For a new verification check, describe the signal it would use (ffprobe field, ffmpeg filter, metadata), the failure condition, and a sensible default threshold.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where should it run in the pipeline?
+      description: Only for new checks. Tier 1 is an immediate gate; later tiers cost more disk I/O.
+      options:
+        - Tier 1 - cheap metadata gate (ffprobe only)
+        - Tier 2 - stream / audio sanity
+        - Tier 3 - visual / content inspection
+        - New tier
+        - Not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches, or existing tools/settings you tried.
+    validations:
+      required: false
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and false positives
+      description: Could this wrongly reject good releases (director's cuts, anime, foreign films)? How could users override it?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I am willing to help implement or test this.
+          required: false
+        - label: I searched existing issues and this has not been requested.
+          required: true

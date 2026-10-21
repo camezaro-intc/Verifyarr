@@ -1,0 +1,123 @@
+name: Bug report
+description: Something went wrong, for example a false positive/negative or a crash
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please search existing issues first.
+        **Never paste API keys or webhook URLs.** Redact them from logs and config.
+        For security problems use the private process in `SECURITY.md` instead of this form.
+
+  - type: input
+    id: version
+    attributes:
+      label: Verifyarr version
+      description: Release tag or image tag (e.g. `1.0.0`), or the commit hash if running from source. The dashboard header shows the version.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation method
+      options:
+        - Docker / Docker Compose
+        - Windows service (NSSM)
+        - Linux service (systemd)
+        - Manual / from source
+    validations:
+      required: true
+
+  - type: input
+    id: servarr_version
+    attributes:
+      label: Radarr / Sonarr version
+      description: Which application sent the webhook, and its version (System > Status).
+      placeholder: "Radarr 5.14.0 / Sonarr 4.0.10"
+    validations:
+      required: true
+
+  - type: input
+    id: release_title
+    attributes:
+      label: Release title
+      description: The release name shown in the Verifyarr dashboard.
+      placeholder: "Epic.Movie.2020.1080p.BluRay.x264-GRP"
+    validations:
+      required: true
+
+  - type: input
+    id: expected_runtime
+    attributes:
+      label: Expected runtime (what you thought should happen)
+      description: The runtime you expected, or the outcome you expected (e.g. "PASSED").
+      placeholder: "173 min, should have PASSED"
+    validations:
+      required: true
+
+  - type: input
+    id: actual_runtime
+    attributes:
+      label: Actual runtime (what happened)
+      description: The probed runtime and result shown on the dashboard.
+      placeholder: "86.0 min, REJECTED (Runtime Mismatch)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which check was involved?
+      options:
+        - Tier 1 - Runtime delta
+        - Tier 2 - Audio language / channel sanity
+        - Tier 3 - Freeze / loop detection
+        - Tier 3 - Credits OCR
+        - Path mapping / file not found
+        - Webhook / Servarr API (delete, blocklist, search)
+        - Jellyfin / Discord notifications
+        - Dashboard / Force Approve
+        - Not sure
+    validations:
+      required: false
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description and steps to reproduce
+      description: What happened, and how can we reproduce it? Was `dry_run` enabled?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant console / debug logs
+      description: |
+        Set `server.log_level: "debug"`, reproduce the problem and paste the relevant lines.
+        Docker: `docker logs verifyarr`. Redact secrets.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Config (optional)
+      description: The relevant parts of `config.yaml` (especially `verification` and `path_mappings`). Remove all API keys and URLs with tokens.
+      render: yaml
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and this has not been reported.
+          required: true
+        - label: I removed all API keys, tokens and webhook URLs from this report.
+          required: true

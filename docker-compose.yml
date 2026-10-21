@@ -1,0 +1,36 @@
+services:
+  verifyarr:
+    build: .
+    image: verifyarr:latest
+    container_name: verifyarr
+    restart: unless-stopped
+    # Must be able to read the media files; match the user that owns them.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: "${TZ:-UTC}"
+    # Optional: secrets in .env override config.yaml (see .env.example)
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "7979:7979"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      # Media is only read (ffprobe/ffmpeg); deletion goes through the Radarr/Sonarr API.
+      # Map it to match path_mappings -> local_path in config.yaml. Windows host example:
+      - "E:/Temp_Flex_Media:/media:ro"
+    extra_hosts:
+      # Lets the container reach Radarr/Sonarr/Jellyfin running on the Docker host
+      # (use http://host.docker.internal:7878 etc. in config.yaml instead of localhost).
+      - "host.docker.internal:host-gateway"
+    networks:
+      - servarr
+
+# Custom bridge network. If Radarr/Sonarr/Jellyfin are containers on the same network,
+# reference them by service name (e.g. http://radarr:7878). To share an existing network,
+# set `external: true` and its name here. To use the host network instead, delete the
+# `networks`/`ports`/`extra_hosts` keys and add `network_mode: host`.
+networks:
+  servarr:
+    driver: bridge

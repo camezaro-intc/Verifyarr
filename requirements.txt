@@ -1,0 +1,11 @@
+fastapi>=0.110
+uvicorn>=0.30
+jinja2>=3.1
+httpx>=0.27
+pydantic>=2.7
+pydantic-settings>=2.3
+pyyaml>=6.0
+# OCR (only used when verification.enable_ocr_credit_check is true; also needs the
+# tesseract binary installed on the host)
+pytesseract>=0.3.10
+pillow>=10.0

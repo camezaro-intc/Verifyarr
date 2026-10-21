@@ -1,0 +1,60 @@
+server:
+  host: "0.0.0.0"
+  port: 7979
+  log_level: "info"
+
+verification:
+  dry_run: true
+  max_concurrent_probes: 2
+  runtime_delta_threshold_minutes: 15
+  enable_audio_sanity_check: true
+  enable_freeze_detection: true
+  enable_ocr_credit_check: false     # Requires tesseract installed on host
+  mockbuster_keywords:
+    - "The Asylum"
+    - "Asylum Presents"
+    - "Syfy Channel"
+  # --- optional tuning (defaults shown) ---
+  freeze_min_duration_seconds: 10    # freezedetect "d=" value
+  freeze_ratio_threshold: 0.30       # fail when frozen time > 30% of the sample
+  freeze_sample_start_seconds: 600   # sample window start (minute 10)
+  freeze_sample_duration_seconds: 180
+  probe_timeout_seconds: 120
+
+radarr:
+  enabled: true
+  url: "http://localhost:7878"
+  api_key: "YOUR_RADARR_API_KEY"
+
+sonarr:
+  enabled: false
+  url: "http://localhost:8989"
+  api_key: "YOUR_SONARR_API_KEY"
+
+jellyfin:
+  enabled: false
+  url: "http://localhost:8096"
+  api_key: "YOUR_JELLYFIN_API_KEY"
+
+notifications:
+  discord_webhook_url: ""
+
+binaries:
+  ffmpeg_path: ""   # Leave empty to auto-detect via PATH
+  ffprobe_path: ""  # Leave empty to auto-detect via PATH
+  tesseract_path: ""
+
+path_mappings:
+  - remote_path: "E:\\Temp_Flex_Media\\"
+    local_path: "E:\\Temp_Flex_Media\\"
+  # Docker example (Radarr/Sonarr on Windows, Verifyarr in a container):
+  # - remote_path: "E:\\Temp_Flex_Media\\"
+  #   local_path: "/media/"
+  # Regex example (group references allowed in local_path):
+  # - remote_path: '^[A-Za-z]:\\Media\\(.*)$'
+  #   local_path: "/media/\\1"
+  #   use_regex: true
+
+# --- optional ---
+storage:
+  database_path: "data/verifyarr.db"   # use ":memory:" for a non-persistent history

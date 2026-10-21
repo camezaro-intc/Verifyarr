@@ -418,7 +418,7 @@
             </div>
           </div>
           <div class="conn-bar">
-            <button type="button" onclick="testConnection('radarr', this)">Test Connection</button>
+            <button type="button" class="btn-secondary" onclick="testConnection('radarr', this)">Test Connection</button>
             <span id="conn-radarr" class="conn-status"></span>
           </div>
         </div>
@@ -451,7 +451,7 @@
             </div>
           </div>
           <div class="conn-bar">
-            <button type="button" onclick="testConnection('sonarr', this)">Test Connection</button>
+            <button type="button" class="btn-secondary" onclick="testConnection('sonarr', this)">Test Connection</button>
             <span id="conn-sonarr" class="conn-status"></span>
           </div>
         </div>
@@ -484,7 +484,7 @@
             </div>
           </div>
           <div class="conn-bar">
-            <button type="button" onclick="testConnection('jellyfin', this)">Test Connection</button>
+            <button type="button" class="btn-secondary" onclick="testConnection('jellyfin', this)">Test Connection</button>
             <span id="conn-jellyfin" class="conn-status"></span>
           </div>
         </div>
@@ -519,7 +519,7 @@
             <input type="text" id="ffprobe_path" placeholder="Leave blank for auto-detect (e.g. C:\Program Files\Jellyfin\Server\ffprobe.exe)"
                    value="{{ settings.binaries.ffprobe_path }}">
             <button type="button" class="btn-secondary" onclick="autoDetectBinary('ffprobe')">Auto-Detect</button>
-            <button type="button" class="btn-secondary" onclick="openFileBrowser('ffprobe_path', 'ffprobe.exe')">Browse...</button>
+            <button type="button" class="btn-secondary" onclick="openFileBrowser('ffprobe')">Browse...</button>
           </div>
           <small>Manual override for ffprobe. Auto-Detect searches System PATH and common directories.</small>
         </div>
@@ -531,7 +531,7 @@
             <input type="text" id="ffmpeg_path" placeholder="Leave blank for auto-detect (e.g. C:\Program Files\Jellyfin\Server\ffmpeg.exe)"
                    value="{{ settings.binaries.ffmpeg_path }}">
             <button type="button" class="btn-secondary" onclick="autoDetectBinary('ffmpeg')">Auto-Detect</button>
-            <button type="button" class="btn-secondary" onclick="openFileBrowser('ffmpeg_path', 'ffmpeg.exe')">Browse...</button>
+            <button type="button" class="btn-secondary" onclick="openFileBrowser('ffmpeg')">Browse...</button>
           </div>
           <small>Manual override for ffmpeg used for freeze frame sampling and video inspection.</small>
         </div>
@@ -543,7 +543,7 @@
             <input type="text" id="tesseract_path" placeholder="Leave blank for auto-detect (e.g. C:\Program Files\Tesseract-OCR\tesseract.exe)"
                    value="{{ settings.binaries.tesseract_path }}">
             <button type="button" class="btn-secondary" onclick="autoDetectBinary('tesseract')">Auto-Detect</button>
-            <button type="button" class="btn-secondary" onclick="openFileBrowser('tesseract_path', 'tesseract.exe')">Browse...</button>
+            <button type="button" class="btn-secondary" onclick="openFileBrowser('tesseract')">Browse...</button>
           </div>
           <small>Manual override for Tesseract OCR binary used for Tier 3B credit scanning.</small>
         </div>
@@ -552,7 +552,7 @@
       <section class="section-card">
         <h3>
           <span>Path Mappings</span>
-          <button type="button" onclick="addMappingRow('', '', false)">+ Add Path Mapping</button>
+          <button type="button" class="btn-secondary" onclick="addMappingRow('', '', false)">+ Add Path Mapping</button>
         </h3>
         <p class="desc">Translate remote download paths sent by Servarr (e.g. Windows drive letters) to local paths accessible by Verifyarr.</p>
 
@@ -587,7 +587,7 @@
           <span>Changes are saved atomically and hot-reloaded into memory instantly.</span>
         </div>
         <div class="save-bar-actions">
-          <button type="button" onclick="location.reload()">Discard Changes</button>
+          <button type="button" class="btn-secondary" onclick="location.reload()">Discard Changes</button>
           <button type="submit" class="btn-primary" id="save-btn-bottom">Save Changes</button>
         </div>
       </div>
@@ -663,21 +663,31 @@
         : '<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>';
     }
 
+    // Toast display helper
+    function showToast(message, kind = 'info', duration = 4000) {
+      if (typeof toast === 'function') {
+        toast(message, kind, duration);
+      } else {
+        console.log(`[${kind}] ${message}`);
+      }
+    }
+
     // Auto-detect system binaries
     async function autoDetectBinary(binaryName) {
-      toast('Querying system and common paths for ' + binaryName + '...', 'info', 2000);
+      showToast('Querying system and common paths for ' + binaryName + '...', 'info', 2000);
       try {
         const res = await fetch('/api/v1/system/detect-binaries');
         const data = await res.json();
         const found = data[binaryName];
         if (found) {
-          document.getElementById(binaryName + '_path').value = found;
-          toast('✓ Auto-detected ' + binaryName + ': ' + found, 'success', 4000);
+          const el = document.getElementById(binaryName + '_path');
+          if (el) el.value = found;
+          showToast('✓ Auto-detected ' + binaryName + ': ' + found, 'success', 4000);
         } else {
-          toast('✗ Could not auto-detect ' + binaryName + '. Please browse or enter manual path.', 'error', 5000);
+          showToast('✗ Could not auto-detect ' + binaryName + '. Please browse or enter manual path.', 'error', 5000);
         }
       } catch (err) {
-        toast('Failed auto-detect: ' + err.message, 'error', 4000);
+        showToast('Failed auto-detect: ' + err.message, 'error', 4000);
       }
     }
 
@@ -687,14 +697,22 @@
     let _fbCurrentPath = '';
     let _fbParentPath = null;
 
-    function openFileBrowser(inputId, targetBinary) {
+    function openFileBrowser(target, maybeBinary) {
+      let inputId = target;
+      let targetBinary = maybeBinary;
+      if (!targetBinary) {
+        const base = target.replace(/_path$/i, '').replace(/\.exe$/i, '');
+        inputId = base + '_path';
+        targetBinary = base + '.exe';
+      }
       _fbTargetInputId = inputId;
       _fbTargetBinary = targetBinary;
       document.getElementById('fb-title-text').textContent = 'Select ' + targetBinary;
 
       // Start in existing path's directory if present, otherwise default root
       let initialPath = '';
-      const existingVal = document.getElementById(inputId).value.trim();
+      const inputEl = document.getElementById(inputId);
+      const existingVal = inputEl ? inputEl.value.trim() : '';
       if (existingVal) {
         const parts = existingVal.split(/[\\/]/);
         parts.pop(); // Remove file name
@@ -876,51 +894,17 @@
       }
     }
 
-    function formatValidationErrors(detail) {
-      if (!detail) return 'Invalid configuration values';
-      if (typeof detail === 'string') return detail;
-      if (Array.isArray(detail)) {
-        return detail.map(item => {
-          const loc = Array.isArray(item.loc) ? item.loc.filter(p => p !== 'body').join('.') : '';
-          return (loc ? loc + ': ' : '') + (item.msg || JSON.stringify(item));
-        }).join(' | ');
-      }
-      return JSON.stringify(detail);
-    }
-
-    function validateExecutableFilename(pathVal, expectedBinary) {
-      if (!pathVal) return true;
-      const clean = pathVal.trim().toLowerCase();
-      const filename = clean.split(/[\\/]/).pop();
-      const base = expectedBinary.replace(/\.exe$/i, '').toLowerCase();
-      return filename === base || filename === base + '.exe';
-    }
-
     async function saveSettings(event) {
       event.preventDefault();
+
+      const topBtn = document.getElementById('save-btn-top');
+      const bottomBtn = document.getElementById('save-btn-bottom');
+      if (topBtn) topBtn.disabled = true;
+      if (bottomBtn) bottomBtn.disabled = true;
 
       const ffprobeVal = document.getElementById('ffprobe_path').value.trim();
       const ffmpegVal = document.getElementById('ffmpeg_path').value.trim();
       const tesseractVal = document.getElementById('tesseract_path').value.trim();
-
-      // Enforce file lock validation on manual input
-      if (!validateExecutableFilename(ffprobeVal, 'ffprobe.exe')) {
-        toast('Validation Error: ffprobe path must point to ffprobe.exe (or ffprobe)', 'error', 5500);
-        return;
-      }
-      if (!validateExecutableFilename(ffmpegVal, 'ffmpeg.exe')) {
-        toast('Validation Error: ffmpeg path must point to ffmpeg.exe (or ffmpeg)', 'error', 5500);
-        return;
-      }
-      if (!validateExecutableFilename(tesseractVal, 'tesseract.exe')) {
-        toast('Validation Error: tesseract path must point to tesseract.exe (or tesseract)', 'error', 5500);
-        return;
-      }
-
-      const topBtn = document.getElementById('save-btn-top');
-      const bottomBtn = document.getElementById('save-btn-bottom');
-      topBtn.disabled = true;
-      bottomBtn.disabled = true;
 
       const keywordsRaw = document.getElementById('mockbuster_keywords').value;
       const keywords = keywordsRaw.split(',').map(s => s.trim()).filter(Boolean);
@@ -965,22 +949,37 @@
       };
 
       try {
-        const res = await fetch('/api/v1/settings', {
+        const response = await fetch('/api/v1/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(formatValidationErrors(data.detail));
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          let message = "Validation Error";
+          if (errorData.detail && Array.isArray(errorData.detail)) {
+            message = errorData.detail.map(d => {
+              const fieldName = (d.loc && d.loc.length) ? d.loc.slice(-1)[0] : 'field';
+              return `${fieldName}: ${d.msg}`;
+            }).join(" | ");
+          } else if (typeof errorData.detail === 'string') {
+            message = errorData.detail;
+          } else if (errorData.message) {
+            message = errorData.message;
+          }
+          showToast(message, "error", 7000);
+          return;
         }
+
+        const data = await response.json().catch(() => ({}));
         updateHeaderModeBadge(isDryRun);
-        toast(data.message || 'Settings saved and applied successfully', 'success');
+        showToast(data.message || 'Settings saved and applied successfully', 'success');
       } catch (err) {
-        toast('Validation Error: ' + err.message, 'error', 6500);
+        showToast('Network / Save Error: ' + err.message, 'error', 6500);
       } finally {
-        topBtn.disabled = false;
-        bottomBtn.disabled = false;
+        if (topBtn) topBtn.disabled = false;
+        if (bottomBtn) bottomBtn.disabled = false;
       }
     }
   </script>

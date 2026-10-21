@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -118,35 +119,12 @@ class BinariesConfig(BaseModel):
     ffprobe_path: str = ""
     tesseract_path: str = ""
 
-    @field_validator("ffmpeg_path")
+    @field_validator("ffmpeg_path", "ffprobe_path", "tesseract_path", mode="before")
     @classmethod
-    def _validate_ffmpeg_filename(cls, v: str) -> str:
-        s = v.strip()
-        if s:
-            name = Path(s).name.lower()
-            if name not in {"ffmpeg", "ffmpeg.exe"}:
-                raise ValueError("ffmpeg_path must point to 'ffmpeg' or 'ffmpeg.exe'")
-        return s
-
-    @field_validator("ffprobe_path")
-    @classmethod
-    def _validate_ffprobe_filename(cls, v: str) -> str:
-        s = v.strip()
-        if s:
-            name = Path(s).name.lower()
-            if name not in {"ffprobe", "ffprobe.exe"}:
-                raise ValueError("ffprobe_path must point to 'ffprobe' or 'ffprobe.exe'")
-        return s
-
-    @field_validator("tesseract_path")
-    @classmethod
-    def _validate_tesseract_filename(cls, v: str) -> str:
-        s = v.strip()
-        if s:
-            name = Path(s).name.lower()
-            if name not in {"tesseract", "tesseract.exe"}:
-                raise ValueError("tesseract_path must point to 'tesseract' or 'tesseract.exe'")
-        return s
+    def _sanitize_binary_path(cls, v: Any) -> str:
+        if isinstance(v, str):
+            return v.strip()
+        return "" if v is None else str(v).strip()
 
     def resolve(self, name: BinaryName) -> Path | None:
         """Locate a binary using tiered hierarchy: manual override -> PATH -> common dirs."""
@@ -173,9 +151,37 @@ class PathMapping(BaseModel):
         copied = dict(data)
         if "from" in copied and "remote_path" not in copied:
             copied["remote_path"] = copied.pop("from")
+        if "from_path" in copied and "remote_path" not in copied:
+            copied["remote_path"] = copied.pop("from_path")
         if "to" in copied and "local_path" not in copied:
             copied["local_path"] = copied.pop("to")
+        if "to_path" in copied and "local_path" not in copied:
+            copied["local_path"] = copied.pop("to_path")
+        if "regex" in copied and "use_regex" not in copied:
+            copied["use_regex"] = copied.pop("regex")
         return copied
+
+    @field_validator("remote_path", "local_path", mode="before")
+    @classmethod
+    def sanitize_path(cls, v: Any) -> str:
+        if isinstance(v, str):
+            s = v.strip()
+            # Preserve drive roots like C:\ or C:/ and root / or \
+            if re.match(r"^[A-Za-z]:[\\/]$", s):
+                return s[:2] + "\\"
+            if s in ("/", "\\"):
+                return s
+            # Strip trailing slashes to prevent escape sequences in JSON/YAML
+            return s.rstrip("/\\")
+        return "" if v is None else str(v).strip().rstrip("/\\")
+
+    @property
+    def from_path(self) -> str:
+        return self.remote_path
+
+    @property
+    def to_path(self) -> str:
+        return self.local_path
 
 
 class StorageConfig(BaseModel):

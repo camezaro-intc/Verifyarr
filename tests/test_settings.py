@@ -304,3 +304,65 @@ def test_binary_resolution_hierarchy(tmp_path: Path, monkeypatch: pytest.MonkeyP
     )
     resolved_common = resolve_binary("ffprobe")
     assert resolved_common == fake_common.resolve()
+
+
+def test_path_mapping_sanitization_and_aliases() -> None:
+    from src.config import PathMapping
+
+    # Trailing slash / backslash stripping
+    m1 = PathMapping.model_validate(
+        {"remote_path": r"E:\Temp_Flex_Media\\", "local_path": "/media/"}
+    )
+    assert m1.remote_path == r"E:\Temp_Flex_Media"
+    assert m1.local_path == "/media"
+    assert m1.from_path == r"E:\Temp_Flex_Media"
+    assert m1.to_path == "/media"
+
+    # From / to aliases and regex
+    m2 = PathMapping.model_validate(
+        {"from_path": r"D:\Downloads\\", "to_path": "/downloads/", "regex": True}
+    )
+    assert m2.remote_path == r"D:\Downloads"
+    assert m2.local_path == "/downloads"
+    assert m2.use_regex is True
+
+    # Root drive preservation
+    m3 = PathMapping.model_validate({"from": "C:\\", "to": "/"})
+    assert m3.remote_path == "C:\\"
+    assert m3.local_path == "/"
+
+
+def test_settings_save_with_trailing_slashes_and_relaxed_binaries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    monkeypatch.setenv("VERIFYARR_CONFIG", str(cfg_file))
+
+    app = create_app(_make_test_settings(tmp_path))
+    with TestClient(app) as client:
+        payload = {
+            "verification": {"dry_run": True},
+            "binaries": {
+                "ffprobe_path": "C:\\Program Files\\Custom\\ffprobe.exe",
+                "ffmpeg_path": "arbitrary_custom_binary",
+                "tesseract_path": "C:\\Program Files\\Tesseract-OCR\\nonexistent.exe",
+            },
+            "path_mappings": [
+                {"from": r"E:\Temp_Flex_Media\\", "to": "/media/", "use_regex": False}
+            ],
+        }
+        res = client.post("/api/v1/settings", json=payload)
+        assert res.status_code == 200
+        assert res.json()["status"] == "ok"
+
+        # Verify saved in config.yaml without trailing slashes
+        disk_data = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+        assert disk_data["path_mappings"] == [
+            {"local_path": "/media", "remote_path": r"E:\Temp_Flex_Media", "use_regex": False}
+        ]
+        assert disk_data["binaries"]["ffprobe_path"] == "C:\\Program Files\\Custom\\ffprobe.exe"
+        assert disk_data["binaries"]["ffmpeg_path"] == "arbitrary_custom_binary"
+        assert (
+            disk_data["binaries"]["tesseract_path"]
+            == "C:\\Program Files\\Tesseract-OCR\\nonexistent.exe"
+        )

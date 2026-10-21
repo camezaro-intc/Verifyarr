@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.4.0"
+  #define AppVersion "1.4.1"
 #endif
 
 [Setup]
@@ -16,9 +16,19 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 
 [Files]
-; Source files compiled by PyInstaller and bundled NSSM
-Source: "..\dist\verifyarr\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Overwrite application binaries on update
+Source: "..\dist\verifyarr\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "config.yaml,.env,data\*,*.db,*.log"
 Source: "..\dist\verifyarr\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+
+; Install config.example.yaml always for reference
+Source: "..\config.example.yaml"; DestDir: "{app}"; DestName: "config.example.yaml"; Flags: ignoreversion
+
+; ONLY install default config.yaml if the user doesn't already have one
+Source: "..\config.example.yaml"; DestDir: "{app}"; DestName: "config.yaml"; Flags: onlyifdestdoesntexist uninsneveruninstall
+
+[Dirs]
+; Keep the data directory intact across uninstalls/reinstalls
+Name: "{app}\data"; Flags: uninsneveruninstall
 
 [Tasks]
 Name: "installservice"; Description: "Register and start Verifyarr as a background Windows Service (NSSM)"; Flags: checkedonce
@@ -93,23 +103,23 @@ begin
     begin
       if FileExists(ExpandConstant('{app}\config.example.yaml')) then
         FileCopy(ExpandConstant('{app}\config.example.yaml'), ConfigFile, False);
-    end;
 
-    // Write discovered binary paths into config.yaml if found
-    if FileExists(ConfigFile) and ((FFprobePath <> '') or (FFmpegPath <> '') or (TesseractPath <> '')) then
-    begin
-      if LoadStringsFromFile(ConfigFile, Lines) then
+      // Write discovered binary paths into config.yaml only for new installations
+      if FileExists(ConfigFile) and ((FFprobePath <> '') or (FFmpegPath <> '') or (TesseractPath <> '')) then
       begin
-        for I := 0 to GetArrayLength(Lines) - 1 do
+        if LoadStringsFromFile(ConfigFile, Lines) then
         begin
-          if (FFprobePath <> '') and (Pos('ffprobe_path:', Lines[I]) > 0) then
-            Lines[I] := '  ffprobe_path: "' + FFprobePath + '"';
-          if (FFmpegPath <> '') and (Pos('ffmpeg_path:', Lines[I]) > 0) then
-            Lines[I] := '  ffmpeg_path: "' + FFmpegPath + '"';
-          if (TesseractPath <> '') and (Pos('tesseract_path:', Lines[I]) > 0) then
-            Lines[I] := '  tesseract_path: "' + TesseractPath + '"';
+          for I := 0 to GetArrayLength(Lines) - 1 do
+          begin
+            if (FFprobePath <> '') and (Pos('ffprobe_path:', Lines[I]) > 0) then
+              Lines[I] := '  ffprobe_path: "' + FFprobePath + '"';
+            if (FFmpegPath <> '') and (Pos('ffmpeg_path:', Lines[I]) > 0) then
+              Lines[I] := '  ffmpeg_path: "' + FFmpegPath + '"';
+            if (TesseractPath <> '') and (Pos('tesseract_path:', Lines[I]) > 0) then
+              Lines[I] := '  tesseract_path: "' + TesseractPath + '"';
+          end;
+          SaveStringsToFile(ConfigFile, Lines, False);
         end;
-        SaveStringsToFile(ConfigFile, Lines, False);
       end;
     end;
   end;

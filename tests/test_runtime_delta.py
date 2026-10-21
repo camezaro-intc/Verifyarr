@@ -1,4 +1,4 @@
-"""Tier 1 (runtime delta) tests with ffprobe mocked, so no media files or binaries are needed."""
+"""Tier 1 (runtime delta), webhook resilience, and SQLite persistence tests."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pytest
 
+from src.models.history import HistoryEntry, HistoryStore, VerificationStatus
+from src.models.servarr import ServarrWebhookPayload, extract_fallback_jobs
 from src.services import verifier as verifier_module
 from src.services.prober import ToolError, probe_file
 
@@ -119,3 +121,80 @@ def test_missing_expected_runtime_is_skipped_not_failed(
     )
 
     assert checks[0].passed and checks[0].skipped
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    ["Download", "MovieFileImport", "FileImport", "Upgrade", "CustomImport"],
+)
+def test_forgiving_servarr_payload_and_event_types(event_type: str) -> None:
+    """Payloads missing optional IDs/metadata still produce valid jobs when a path is present."""
+    raw = {
+        "eventType": event_type,
+        "movie": {"title": "Test Movie", "runtime": 120, "originalLanguage": "English"},
+        "movieFile": {"path": r"E:\Temp_Flex_Media\Movies\Test\movie.mkv"},
+    }
+    payload = ServarrWebhookPayload.model_validate(raw)
+    assert payload.is_import_event
+    (job,) = payload.to_jobs()
+    assert job.title == "Test Movie"
+    assert job.expected_runtime_min == 120.0
+    assert job.remote_path == r"E:\Temp_Flex_Media\Movies\Test\movie.mkv"
+
+
+def test_path_resolution_fallbacks() -> None:
+    # Resolved via movie.folderPath when movieFile is omitted
+    by_folder = ServarrWebhookPayload.model_validate(
+        {
+            "eventType": "MovieFileImport",
+            "movie": {"title": "Folder Movie", "folderPath": r"E:\Movies\FolderMovie\movie.mkv"},
+        }
+    )
+    assert by_folder.to_jobs()[0].remote_path == r"E:\Movies\FolderMovie\movie.mkv"
+
+    # Resolved via root path
+    by_root = ServarrWebhookPayload.model_validate(
+        {"eventType": "FileImport", "title": "Root Movie", "path": "/media/root.mkv"}
+    )
+    assert by_root.to_jobs()[0].remote_path == "/media/root.mkv"
+
+    # Fallback dictionary extractor
+    (fb_job,) = extract_fallback_jobs(
+        {
+            "eventType": "Download",
+            "movie": {"title": "Fallback Movie", "runtime": 95},
+            "movieFile": {"path": "/media/fallback.mkv"},
+        }
+    )
+    assert fb_job.title == "Fallback Movie"
+    assert fb_job.expected_runtime_min == 95.0
+    assert fb_job.remote_path == "/media/fallback.mkv"
+
+
+def test_history_store_wal_and_immediate_commit(tmp_path: Path) -> None:
+    db_file = tmp_path / "nested" / "data" / "verifyarr.db"
+    store = HistoryStore(str(db_file))
+
+    async def run_check() -> list[HistoryEntry]:
+        await store.open()
+        try:
+            await store.add(
+                HistoryEntry(
+                    app="radarr",
+                    title="Test Movie (2026)",
+                    release_name="Test.Movie.2026",
+                    file_path="/media/movie.mkv",
+                    expected_runtime_min=120.0,
+                    probed_runtime_min=120.0,
+                    status=VerificationStatus.PASSED,
+                )
+            )
+            return await store.recent(10)
+        finally:
+            await store.close()
+
+    entries = asyncio.run(run_check())
+    assert db_file.is_file()
+    assert len(entries) == 1
+    assert entries[0].title == "Test Movie (2026)"
+    assert entries[0].status == VerificationStatus.PASSED

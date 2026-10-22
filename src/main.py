@@ -11,16 +11,16 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import ValidationError
 
 from src import __version__
 from src.config import Settings, load_settings
 from src.models.history import HistoryStore, VerificationStatus
-from src.models.servarr import ServarrWebhookPayload, extract_fallback_jobs
 from src.routers.settings import router as settings_router
+from src.routers.webhooks import router as webhooks_router
 from src.services.notifier import Notifier
+from src.services.pre_download_checker import PreDownloadInspector
 from src.services.remediator import Remediator
 from src.services.verifier import Verifier
 
@@ -43,9 +43,7 @@ DASHBOARD_LIMIT = 50
 class _IsoFormatter(logging.Formatter):
     """Log formatter emitting ISO-8601 timestamps with UTC offset."""
 
-    def formatTime(
-        self, record: logging.LogRecord, datefmt: str | None = None
-    ) -> str:  # noqa: N802
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:  # noqa: N802
         return datetime.fromtimestamp(record.created).astimezone().isoformat(timespec="seconds")
 
 
@@ -75,6 +73,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await history.open()
         remediator = Remediator(active)
         notifier = Notifier(active)
+        pre_download_checker = PreDownloadInspector(active, history, remediator, notifier)
         verifier = Verifier(active, history, remediator, notifier)
         verifier.log_environment()
         _warn_on_placeholder_keys(active)
@@ -83,10 +82,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.history = history
         app.state.remediator = remediator
         app.state.notifier = notifier
+        app.state.pre_download_checker = pre_download_checker
         app.state.verifier = verifier
         try:
             yield
         finally:
+            await pre_download_checker.aclose()
             await verifier.shutdown()
             await notifier.aclose()
             await remediator.aclose()
@@ -96,6 +97,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     app.state.templates = templates
     app.include_router(settings_router)
+    app.include_router(webhooks_router)
 
     @app.get("/health")
     async def health(request: Request) -> dict[str, Any]:
@@ -104,96 +106,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "version": __version__,
             "dry_run": request.app.state.settings.verification.dry_run,
         }
-
-    @app.post("/api/v1/webhook")
-    async def webhook(request: Request) -> JSONResponse:
-        try:
-            body = await request.json()
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Body must be valid JSON") from exc
-        if not isinstance(body, dict):
-            raise HTTPException(status_code=400, detail="Body must be a JSON object")
-
-        raw_movie = body.get("movie")
-        raw_series = body.get("series")
-        movie_raw: dict[str, Any] = raw_movie if isinstance(raw_movie, dict) else {}
-        series_raw: dict[str, Any] = raw_series if isinstance(raw_series, dict) else {}
-        logger.info(
-            "Incoming Webhook: eventType='%s', title='%s'",
-            body.get("eventType"),
-            movie_raw.get("title") or series_raw.get("title") or body.get("title"),
-        )
-        logger.debug("Raw webhook payload: %s", body)
-
-        # Intercept Test events before validation so the "Test" button always succeeds.
-        if str(body.get("eventType", "")).strip().lower() == "test":
-            logger.info("Received webhook test event")
-            return JSONResponse({"status": "ok", "message": "Verifyarr webhook test successful"})
-
-        active: Settings = request.app.state.settings
-        try:
-            payload = ServarrWebhookPayload.model_validate(body)
-        except ValidationError as exc:
-            logger.error(
-                "Webhook Pydantic validation error (attempting fallback extraction): %s",
-                exc.errors(include_url=False),
-            )
-            fallback_jobs = extract_fallback_jobs(body)
-            if not fallback_jobs:
-                raise HTTPException(
-                    status_code=422, detail=exc.errors(include_url=False, include_context=False)
-                ) from exc
-            fb_app = fallback_jobs[0].app
-            if not getattr(active, fb_app).enabled:
-                return JSONResponse(
-                    {"status": "ignored", "message": f"{fb_app} integration is disabled"}
-                )
-            queued = request.app.state.verifier.submit(fallback_jobs)
-            logger.info(
-                "Queued %d file(s) via fallback extractor from %s event",
-                queued,
-                body.get("eventType"),
-            )
-            return JSONResponse({"status": "accepted", "queued": queued}, status_code=202)
-
-        if not payload.is_import_event:
-            logger.info("Ignoring non-import webhook event '%s'", payload.event_type)
-            return JSONResponse(
-                {"status": "ignored", "message": f"Event {payload.event_type!r} is not verified"}
-            )
-
-        app_name = payload.app
-        if app_name is None:
-            raise HTTPException(status_code=400, detail="Payload has neither movie nor series")
-        if not getattr(active, app_name).enabled:
-            logger.info("Ignoring webhook because %s integration is disabled", app_name)
-            return JSONResponse(
-                {"status": "ignored", "message": f"{app_name} integration is disabled"}
-            )
-
-        jobs = payload.to_jobs() or extract_fallback_jobs(body)
-        if not jobs:
-            entity = payload.movie or payload.series
-            if entity is not None and entity.id is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail=[
-                        {
-                            "loc": ["movieFile", "path"],
-                            "msg": "Field required: media file path missing",
-                            "type": "missing",
-                        }
-                    ],
-                )
-            logger.info("Webhook payload contains no media file to verify")
-            return JSONResponse(
-                {"status": "ignored", "message": "Payload contains no imported media file"}
-            )
-
-        # Verification runs in the background; Servarr must not wait on ffmpeg / season packs.
-        queued = request.app.state.verifier.submit(jobs)
-        logger.info("Queued %d file(s) from %s %s event", queued, app_name, payload.event_type)
-        return JSONResponse({"status": "accepted", "queued": queued}, status_code=202)
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request) -> HTMLResponse:

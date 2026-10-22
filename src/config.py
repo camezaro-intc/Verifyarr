@@ -146,6 +146,43 @@ class JellyfinConfig(ArrConfig):
     """Jellyfin shares the url/api_key/enabled shape of the Servarr config."""
 
 
+class QBittorrentConfig(BaseModel):
+    """Connection and inspection parameters for qBittorrent download client (Tier 0)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    url: str = "http://localhost:8080"
+    username: str = "admin"
+    password: SecretStr = SecretStr("")
+    inspect_on_grab: bool = True
+    metadata_timeout_seconds: int = Field(default=30, ge=5, le=300)
+    blocked_extensions: list[str] = Field(
+        default_factory=lambda: [".7z", ".zip", ".rar", ".exe", ".iso", ".bat"]
+    )
+
+    @field_validator("url")
+    @classmethod
+    def _strip_slash(cls, value: str) -> str:
+        return value.strip().rstrip("/")
+
+    @field_validator("blocked_extensions", mode="before")
+    @classmethod
+    def _sanitize_blocked_extensions(cls, value: Any) -> list[str]:
+        if isinstance(value, str):
+            value = [ext.strip() for ext in value.split(",") if ext.strip()]
+        if isinstance(value, (list, tuple, set)):
+            cleaned: list[str] = []
+            for item in value:
+                ext = str(item).strip().lower()
+                if ext:
+                    if not ext.startswith("."):
+                        ext = f".{ext}"
+                    cleaned.append(ext)
+            return cleaned
+        return [".7z", ".zip", ".rar", ".exe", ".iso", ".bat"]
+
+
 class NotificationsConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -248,6 +285,7 @@ class Settings(BaseSettings):
     jellyfin: JellyfinConfig = Field(
         default_factory=lambda: JellyfinConfig(url="http://localhost:8096")
     )
+    qbittorrent: QBittorrentConfig = Field(default_factory=QBittorrentConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     binaries: BinariesConfig = Field(default_factory=BinariesConfig)
     path_mappings: list[PathMapping] = Field(default_factory=list)
@@ -292,6 +330,15 @@ class Settings(BaseSettings):
                 "url": self.jellyfin.url,
                 "api_key": self.jellyfin.api_key.get_secret_value(),
             },
+            "qbittorrent": {
+                "enabled": self.qbittorrent.enabled,
+                "url": self.qbittorrent.url,
+                "username": self.qbittorrent.username,
+                "password": self.qbittorrent.password.get_secret_value(),
+                "inspect_on_grab": self.qbittorrent.inspect_on_grab,
+                "metadata_timeout_seconds": self.qbittorrent.metadata_timeout_seconds,
+                "blocked_extensions": list(self.qbittorrent.blocked_extensions),
+            },
             "notifications": self.notifications.model_dump(),
             "binaries": self.binaries.model_dump(),
             "path_mappings": [m.model_dump() for m in self.path_mappings],
@@ -305,6 +352,7 @@ class Settings(BaseSettings):
         self.radarr = other.radarr
         self.sonarr = other.sonarr
         self.jellyfin = other.jellyfin
+        self.qbittorrent = other.qbittorrent
         self.notifications = other.notifications
         self.binaries = other.binaries
         self.path_mappings = list(other.path_mappings)
@@ -325,6 +373,7 @@ class AppConfig(BaseModel):
     jellyfin: JellyfinConfig = Field(
         default_factory=lambda: JellyfinConfig(url="http://localhost:8096")
     )
+    qbittorrent: QBittorrentConfig = Field(default_factory=QBittorrentConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
     binaries: BinariesConfig = Field(default_factory=BinariesConfig)
     path_mappings: list[PathMapping] = Field(default_factory=list)
@@ -337,6 +386,7 @@ class AppConfig(BaseModel):
             radarr=self.radarr,
             sonarr=self.sonarr,
             jellyfin=self.jellyfin,
+            qbittorrent=self.qbittorrent,
             notifications=self.notifications,
             binaries=self.binaries,
             path_mappings=self.path_mappings,

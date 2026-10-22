@@ -19,6 +19,7 @@
              letter-spacing: .5px; border: 1px solid; }
     .badge.PASSED { color: var(--green); border-color: var(--green); background: rgba(46,204,113,.12); }
     .badge.REJECTED { color: var(--red); border-color: var(--red); background: rgba(231,76,60,.12); }
+    .badge.REJECTED_PRE_DOWNLOAD { color: #e74c3c; border-color: #e74c3c; background: rgba(231,76,60,.12); }
     .badge.DRY_RUN { color: var(--amber); border-color: var(--amber); background: rgba(243,156,18,.12); }
     .badge.ERROR { color: var(--grey); border-color: var(--grey); background: rgba(127,140,141,.12); }
     .chip { display: inline-block; margin-left: 6px; font-size: 11px; color: var(--accent); }
@@ -36,6 +37,7 @@
     <section class="stats">
       <div class="stat"><b>{{ counts.PASSED }}</b><span>Passed</span></div>
       <div class="stat"><b>{{ counts.REJECTED }}</b><span>Rejected</span></div>
+      <div class="stat"><b>{{ counts.REJECTED_PRE_DOWNLOAD }}</b><span>Pre-Purged</span></div>
       <div class="stat"><b>{{ counts.DRY_RUN }}</b><span>Dry run</span></div>
       <div class="stat"><b>{{ counts.ERROR }}</b><span>Errors</span></div>
     </section>

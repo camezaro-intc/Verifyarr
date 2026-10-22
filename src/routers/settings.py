@@ -46,6 +46,16 @@ class ConnectionTestRequest(BaseModel):
     api_key: str = ""
 
 
+class QBittorrentTestRequest(BaseModel):
+    """Payload for ``POST /api/v1/settings/test-qbittorrent``."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    url: str = "http://localhost:8080"
+    username: str = "admin"
+    password: str = ""
+
+
 def _merge_settings_payload(current: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
     """Merge a full, partial, or flat incoming settings payload into a copy of ``current``.
 
@@ -143,6 +153,8 @@ async def update_settings(request: Request) -> JSONResponse:
         request.app.state.remediator.reload_settings(active)
     if hasattr(request.app.state, "notifier"):
         request.app.state.notifier.reload_settings(active)
+    if hasattr(request.app.state, "pre_download_checker"):
+        request.app.state.pre_download_checker.reload_settings(active)
 
     logger.info(
         "Settings updated and hot-reloaded via Web UI (dry_run=%s, path=%s)",
@@ -225,6 +237,45 @@ async def test_connection(request: Request) -> JSONResponse:
         else "unknown"
     )
     return JSONResponse({"status": "ok", "version": version})
+
+
+@router.post("/api/v1/settings/test-qbittorrent")
+async def test_qbittorrent(request: Request) -> JSONResponse:
+    """Test connectivity and credentials against the qBittorrent Web API."""
+    try:
+        raw = await request.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Body must be valid JSON") from exc
+
+    if not isinstance(raw, dict):
+        raise HTTPException(status_code=400, detail="Body must be a JSON object")
+
+    try:
+        payload = QBittorrentTestRequest.model_validate(raw)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors(include_url=False)) from exc
+
+    base_url = payload.url.strip().rstrip("/")
+    if not base_url:
+        return JSONResponse(
+            {"status": "error", "message": "qBittorrent URL is required"}, status_code=200
+        )
+
+    from src.services.qbittorrent import QBittorrentClient
+
+    client = QBittorrentClient(
+        url=base_url,
+        username=payload.username.strip(),
+        password=payload.password,
+        timeout=6.0,
+    )
+    try:
+        ok, message = await client.test_connection()
+        if ok:
+            return JSONResponse({"status": "ok", "message": message}, status_code=200)
+        return JSONResponse({"status": "error", "message": message}, status_code=200)
+    finally:
+        await client.aclose()
 
 
 def _get_system_drives() -> list[str]:

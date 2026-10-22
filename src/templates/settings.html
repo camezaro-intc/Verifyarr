@@ -488,6 +488,57 @@
             <span id="conn-jellyfin" class="conn-status"></span>
           </div>
         </div>
+
+        <!-- qBittorrent Card -->
+        <div class="integration-card" style="margin-top: 18px; margin-bottom: 0;">
+          <div class="integration-header">
+            <div class="integration-brand">
+              <span>qBittorrent</span>
+              <span class="badge-tag">Download Client (Tier 0)</span>
+            </div>
+            <label class="switch" title="Enable qBittorrent">
+              <input type="checkbox" id="qbittorrent_enabled" {% if settings.qbittorrent.enabled %}checked{% endif %}>
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div class="form-grid-2">
+            <div class="field">
+              <label for="qbittorrent_url">qBittorrent Web UI URL</label>
+              <input type="url" id="qbittorrent_url" placeholder="http://localhost:8080" value="{{ settings.qbittorrent.url }}">
+            </div>
+            <div class="field">
+              <label for="qbittorrent_username">Username</label>
+              <input type="text" id="qbittorrent_username" placeholder="admin" value="{{ settings.qbittorrent.username }}">
+            </div>
+            <div class="field">
+              <label for="qbittorrent_password">Password</label>
+              <div class="input-with-action">
+                <input type="password" id="qbittorrent_password" placeholder="Password" value="{{ settings.qbittorrent.password }}">
+                <button type="button" class="action-inline-btn" onclick="togglePasswordVisibility('qbittorrent_password', this)" title="Show/Hide Password">
+                  <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                </button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="qbittorrent_metadata_timeout_seconds">Metadata Timeout (seconds)</label>
+              <input type="number" id="qbittorrent_metadata_timeout_seconds" min="5" max="300" value="{{ settings.qbittorrent.metadata_timeout_seconds }}">
+            </div>
+          </div>
+          <div class="field" style="margin-top: 10px;">
+            <label class="switch-inline">
+              <input type="checkbox" id="qbittorrent_inspect_on_grab" {% if settings.qbittorrent.inspect_on_grab %}checked{% endif %}>
+              <span>Inspect on Grab (Auto-Purge malicious archives before downloading)</span>
+            </label>
+          </div>
+          <div class="field" style="margin-top: 10px;">
+            <label for="qbittorrent_blocked_extensions">Blocked File Extensions (comma-separated)</label>
+            <input type="text" id="qbittorrent_blocked_extensions" value="{{ settings.qbittorrent.blocked_extensions | join(', ') if settings.qbittorrent.blocked_extensions else '.7z, .zip, .rar, .exe, .iso, .bat' }}">
+          </div>
+          <div class="conn-bar">
+            <button type="button" class="btn-secondary" onclick="testQBittorrentConnection(this)">Test Connection</button>
+            <span id="conn-qbittorrent" class="conn-status"></span>
+          </div>
+        </div>
       </section>
     </div>
 
@@ -894,6 +945,44 @@
       }
     }
 
+    // qBittorrent connection tester
+    async function testQBittorrentConnection(btn) {
+      const urlEl = document.getElementById('qbittorrent_url');
+      const userEl = document.getElementById('qbittorrent_username');
+      const passEl = document.getElementById('qbittorrent_password');
+      const statusEl = document.getElementById('conn-qbittorrent');
+
+      btn.disabled = true;
+      statusEl.className = 'conn-status wait';
+      statusEl.textContent = '⟳ Testing qBittorrent connection...';
+
+      try {
+        const res = await fetch('/api/v1/settings/test-qbittorrent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: urlEl.value.trim(),
+            username: userEl.value.trim(),
+            password: passEl.value.trim()
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.status === 'ok') {
+          statusEl.className = 'conn-status ok';
+          statusEl.textContent = '✓ ' + (data.message || 'Connected');
+        } else {
+          const msg = data.message || (data.detail ? JSON.stringify(data.detail) : ('HTTP ' + res.status));
+          statusEl.className = 'conn-status err';
+          statusEl.textContent = '✗ ' + msg;
+        }
+      } catch (err) {
+        statusEl.className = 'conn-status err';
+        statusEl.textContent = '✗ ' + err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
     async function saveSettings(event) {
       event.preventDefault();
 
@@ -936,6 +1025,15 @@
           enabled: document.getElementById('jellyfin_enabled').checked,
           url: document.getElementById('jellyfin_url').value.trim(),
           api_key: document.getElementById('jellyfin_api_key').value.trim()
+        },
+        qbittorrent: {
+          enabled: document.getElementById('qbittorrent_enabled').checked,
+          url: document.getElementById('qbittorrent_url').value.trim(),
+          username: document.getElementById('qbittorrent_username').value.trim(),
+          password: document.getElementById('qbittorrent_password').value.trim(),
+          inspect_on_grab: document.getElementById('qbittorrent_inspect_on_grab').checked,
+          metadata_timeout_seconds: Number(document.getElementById('qbittorrent_metadata_timeout_seconds').value) || 30,
+          blocked_extensions: document.getElementById('qbittorrent_blocked_extensions').value.split(',').map(s => s.trim()).filter(Boolean)
         },
         notifications: {
           discord_webhook_url: document.getElementById('discord_webhook_url').value.trim()

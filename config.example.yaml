@@ -36,6 +36,21 @@ jellyfin:
   url: "http://localhost:8096"
   api_key: "YOUR_JELLYFIN_API_KEY"
 
+qbittorrent:
+  enabled: false
+  url: "http://localhost:8080"
+  username: "admin"
+  password: ""
+  inspect_on_grab: true
+  metadata_timeout_seconds: 30
+  blocked_extensions:
+    - ".7z"
+    - ".zip"
+    - ".rar"
+    - ".exe"
+    - ".iso"
+    - ".bat"
+
 notifications:
   discord_webhook_url: ""
 

@@ -396,3 +396,39 @@ def test_normalize_path_and_resilient_yaml_loader(tmp_path: Path) -> None:
     assert loaded["binaries"]["ffprobe_path"] == "C:/Program Files/Jellyfin/Server/ffprobe.exe"
     assert loaded["binaries"]["ffmpeg_path"] == "C:/ffmpeg/bin/ffmpeg.exe"
     assert loaded["path_mappings"][0]["from"] == "E:/Temp_Flex_Media/Movies"
+
+
+def test_qbittorrent_settings_persistence_and_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg_file = tmp_path / "config.yaml"
+    monkeypatch.setenv("VERIFYARR_CONFIG", str(cfg_file))
+
+    app = create_app(_make_test_settings(tmp_path))
+    with TestClient(app) as client:
+        payload = {
+            "qbittorrent": {
+                "enabled": True,
+                "url": "http://127.0.0.1:8080/",
+                "username": "admin",
+                "password": "mypassword",
+                "inspect_on_grab": True,
+                "metadata_timeout_seconds": 45,
+                "blocked_extensions": [".7z", ".zip", ".iso"],
+            }
+        }
+        res = client.post("/api/v1/settings", json=payload)
+        assert res.status_code == 200
+
+        disk_data = yaml.safe_load(cfg_file.read_text(encoding="utf-8"))
+        assert disk_data["qbittorrent"]["enabled"] is True
+        assert disk_data["qbittorrent"]["url"] == "http://127.0.0.1:8080"
+        assert disk_data["qbittorrent"]["username"] == "admin"
+        assert disk_data["qbittorrent"]["password"] == "mypassword"
+        assert disk_data["qbittorrent"]["inspect_on_grab"] is True
+        assert disk_data["qbittorrent"]["metadata_timeout_seconds"] == 45
+        assert disk_data["qbittorrent"]["blocked_extensions"] == [".7z", ".zip", ".iso"]
+
+        assert app.state.settings.qbittorrent.enabled is True
+        assert app.state.settings.qbittorrent.url == "http://127.0.0.1:8080"
+        assert app.state.pre_download_checker._settings.qbittorrent.enabled is True

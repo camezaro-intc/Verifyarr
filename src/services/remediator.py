@@ -37,7 +37,12 @@ class Remediator:
         config = self._settings.radarr if app == "radarr" else self._settings.sonarr
         if not config.enabled:
             raise RemediationError(f"{app} integration is disabled in config")
-        if not config.url or not config.api_key.get_secret_value():
+        api_key_str = (
+            config.api_key.get_secret_value()
+            if hasattr(config.api_key, "get_secret_value")
+            else str(config.api_key)
+        )
+        if not config.url or not api_key_str:
             raise RemediationError(f"{app} url/api_key is not configured")
         return config
 
@@ -51,6 +56,11 @@ class Remediator:
         json: Any = None,
     ) -> Any:
         config = self._config(app)
+        api_key_str = (
+            config.api_key.get_secret_value()
+            if hasattr(config.api_key, "get_secret_value")
+            else str(config.api_key)
+        )
         url = f"{config.url}{path}"
         try:
             response = await self._client.request(
@@ -58,7 +68,7 @@ class Remediator:
                 url,
                 params=params,
                 json=json,
-                headers={"X-Api-Key": config.api_key.get_secret_value()},
+                headers={"X-Api-Key": api_key_str},
             )
         except httpx.HTTPError as exc:
             raise RemediationError(f"{app} {method} {path} failed: {exc!r}") from exc
@@ -128,38 +138,57 @@ class Remediator:
         return "Blocklisted release via /api/v3/blocklist"
 
     async def _find_grabbed_history_id(
-        self, app: AppName, release_title: str, entity_id: int, download_id: str | None
+        self, app: AppName, release_title: str, entity_id: int | None, download_id: str | None
     ) -> int | None:
-        if app == "radarr":
-            path, params = "/api/v3/history/movie", {
-                "movieId": entity_id,
-                "eventType": _GRABBED_EVENT_TYPE,
-            }
-        else:
-            path, params = "/api/v3/history/series", {
-                "seriesId": entity_id,
-                "eventType": _GRABBED_EVENT_TYPE,
-            }
-        try:
-            data = await self._request(app, "GET", path, params=params)
-        except RemediationError as exc:
-            logger.warning("Could not look up grabbed history: %s", exc)
+        def match_record(records: list[dict[str, Any]]) -> int | None:
+            grabbed = [
+                r
+                for r in records
+                if str(r.get("eventType", "grabbed")).lower()
+                in ("grabbed", str(_GRABBED_EVENT_TYPE))
+            ]
+            if download_id:
+                for record in grabbed:
+                    if str(record.get("downloadId", "")).lower() == download_id.lower():
+                        return int(record["id"])
+            for record in grabbed:
+                if record.get("sourceTitle") == release_title:
+                    return int(record["id"])
             return None
 
-        records = data.get("records", []) if isinstance(data, dict) else (data or [])
-        grabbed = [
-            r
-            for r in records
-            if str(r.get("eventType", "grabbed")).lower() in ("grabbed", str(_GRABBED_EVENT_TYPE))
-        ]
-        if download_id:
-            for record in grabbed:
-                if str(record.get("downloadId", "")).lower() == download_id.lower():
-                    return int(record["id"])
-        for record in grabbed:
-            if record.get("sourceTitle") == release_title:
-                return int(record["id"])
-        return None
+        if entity_id:
+            path, params = (
+                ("/api/v3/history/movie", {"movieId": entity_id, "eventType": _GRABBED_EVENT_TYPE})
+                if app == "radarr"
+                else (
+                    "/api/v3/history/series",
+                    {"seriesId": entity_id, "eventType": _GRABBED_EVENT_TYPE},
+                )
+            )
+            try:
+                data = await self._request(app, "GET", path, params=params)
+                records = data.get("records", []) if isinstance(data, dict) else (data or [])
+                found_id = match_record(records)
+                if found_id is not None:
+                    return found_id
+            except RemediationError as exc:
+                logger.warning(
+                    "Could not look up grabbed history for entity %s: %s", entity_id, exc
+                )
+
+        # Fallback to general history
+        try:
+            data = await self._request(
+                app,
+                "GET",
+                "/api/v3/history",
+                params={"eventType": _GRABBED_EVENT_TYPE, "pageSize": 50},
+            )
+            records = data.get("records", []) if isinstance(data, dict) else (data or [])
+            return match_record(records)
+        except RemediationError as exc:
+            logger.warning("Could not look up general grabbed history: %s", exc)
+            return None
 
     async def trigger_search(
         self, app: AppName, entity_id: int, *, episode_ids: list[int] | None = None

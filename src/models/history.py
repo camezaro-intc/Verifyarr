@@ -28,6 +28,7 @@ class VerificationStatus(StrEnum):
     REJECTED = "REJECTED"  # failed verification and the release was remediated
     DRY_RUN = "DRY_RUN"  # failed verification, but dry-run mode prevented remediation
     ERROR = "ERROR"  # could not be verified (missing file, ffprobe failure, ...); never remediated
+    REJECTED_PRE_DOWNLOAD = "REJECTED_PRE_DOWNLOAD"  # fake release purged prior to download
 
 
 class CheckResult(BaseModel):

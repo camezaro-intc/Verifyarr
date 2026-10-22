@@ -45,10 +45,11 @@ The most reliable tell is the **runtime delta**: the container duration compared
 
 ## Features
 
-**Multi-tier verification pipeline** (checks run in order; Tier 1 failure stops the pipeline immediately)
+**Multi-tier verification pipeline** (checks run in order; earlier tier failure stops the pipeline immediately)
 
 | Tier | Check | What it does |
 |------|-------|--------------|
+| 0 | **Pre-Download Manifest Inspection** (qBittorrent) | Intercepts Sonarr/Radarr **On Grab** webhooks, inspects internal torrent file manifest via qBittorrent Web API, and purges fake releases (`.7z`, `.zip`, `.rar`, `.exe`, `.iso`, or releases with zero video files) before bytes download to disk. Blocklists the release and triggers an automatic replacement search. |
 | 1 | **Runtime delta** | `ffprobe` container duration vs. the expected runtime. Fails if the difference exceeds `runtime_delta_threshold_minutes` (default 15). Multi-episode Sonarr files are scaled by episode count. |
 | 2 | **Stream and channel verification** | At least one audio stream must match the movie's original language, and releases advertising Atmos, 7.1 or TrueHD must contain more than a stereo track. |
 | 3 | **Freeze-frame / loop detection** | `ffmpeg freezedetect` on a 3-minute sample (minutes 10-13). Fails if more than 30% of the sample is frozen. |
@@ -57,9 +58,9 @@ The most reliable tell is the **runtime delta**: the container duration compared
 **Operations & User Experience**
 
 - **Modern Web Dashboard** at `/`: real-time view of recent verifications with timestamp, title, release name, probed vs. expected runtime, check breakdown, and failure reasons.
-- **Arr-Style Settings UI** at `/settings`: configure verification engine, analysis tiers, Servarr connections, notifications, and path mappings with live in-memory hot reloading.
+- **Arr-Style Settings UI** at `/settings`: configure verification engine, analysis tiers, Servarr connections, qBittorrent download client, notifications, and path mappings with live in-memory hot reloading.
 - **Tiered Binary Resolution & Locked File Browser**: Auto-detects `ffprobe`, `ffmpeg`, and `tesseract` across system `PATH` and common vendor directories (Jellyfin Server, Chocolatey, Program Files, Linux `/usr`), supports manual overrides, and provides a restricted server-side filesystem navigator.
-- **Connection Testers**: real-time API status validation for Radarr, Sonarr, and Jellyfin with password masking toggles.
+- **Connection Testers**: real-time API status validation for Radarr, Sonarr, Jellyfin, and qBittorrent with password masking toggles.
 - **Force Approve**: one-click whitelist for false positives such as director's cuts and extended editions. It also triggers a Jellyfin refresh.
 - **Dry-run mode** (on by default): runs every check and records the results, but never deletes or blocklists anything.
 - **Safe remediation** (live mode): delete the file, blocklist the release, then trigger a replacement search. The search only runs if the first two steps succeeded.

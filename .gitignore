@@ -13,6 +13,7 @@ logs/
 *.db-shm
 *.sqlite
 *.sqlite3
+*pass*.txt
 
 # --- Python ---
 __pycache__/

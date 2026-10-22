@@ -31,6 +31,7 @@ class QBittorrentClient:
         self._timeout = timeout
         self._client = client or httpx.AsyncClient(timeout=httpx.Timeout(timeout))
         self._authenticated = False
+        self._last_error: str = ""
 
     async def aclose(self) -> None:
         """Close the underlying HTTP client session."""
@@ -39,46 +40,82 @@ class QBittorrentClient:
     async def login(self) -> bool:
         """Authenticate with qBittorrent via ``POST /api/v2/auth/login``.
 
+        Supports both qBittorrent v4.x (HTTP 200 'Ok.') and v5.x (HTTP 204 No Content).
         Returns True if login succeeded and session cookie was established.
         """
         login_url = f"{self.url}/api/v2/auth/login"
+        headers = {
+            "Referer": f"{self.url}/",
+            "Origin": self.url,
+        }
         try:
             resp = await self._client.post(
                 login_url,
                 data={"username": self.username, "password": self.password},
-                headers={"Referer": self.url},
+                headers=headers,
             )
         except httpx.HTTPError as exc:
+            self._last_error = f"Could not connect to qBittorrent: {exc}"
             logger.error("Failed to connect to qBittorrent at %s: %s", login_url, exc)
             raise QBittorrentError(f"Could not connect to qBittorrent: {exc}") from exc
 
-        if resp.status_code == 200 and resp.text.strip() == "Ok.":
+        # qBittorrent v5+ returns 204 No Content; v4 returns 200 with "Ok."
+        # Cookies may be named SID, QBT_SID_PORT, etc.
+        is_success = (
+            resp.status_code == 204
+            or (resp.status_code == 200 and resp.text.strip() == "Ok.")
+            or (
+                resp.status_code in (200, 204)
+                and any("sid" in k.lower() or "qbt" in k.lower() for k in resp.cookies.keys())
+            )
+        )
+
+        if is_success:
             self._authenticated = True
+            self._last_error = ""
             logger.info("Authenticated successfully with qBittorrent at %s", self.url)
             return True
 
         self._authenticated = False
-        reason = resp.text.strip() if resp.text else f"HTTP {resp.status_code}"
-        logger.warning("qBittorrent login failed (%s): %s", self.url, reason)
+        if resp.status_code == 401:
+            self._last_error = "Invalid username or password (HTTP 401)"
+        elif resp.status_code == 403:
+            self._last_error = "Access forbidden (HTTP 403 - check IP ban or CSRF)"
+        elif resp.text.strip() == "Fails.":
+            self._last_error = "Invalid username or password"
+        else:
+            self._last_error = f"HTTP {resp.status_code}: {resp.text.strip() or 'Unauthorized'}"
+        logger.warning("qBittorrent login failed (%s): %s", self.url, self._last_error)
         return False
 
     async def _ensure_authenticated(self) -> None:
         if not self._authenticated:
             ok = await self.login()
             if not ok:
-                raise QBittorrentError(
-                    "qBittorrent authentication failed (bad credentials or refused)"
-                )
+                raise QBittorrentError(self._last_error or "qBittorrent authentication failed")
 
     async def test_connection(self) -> tuple[bool, str]:
         """Test authentication and query the qBittorrent API version."""
         try:
+            # Check if localhost bypass allows access directly without logging in
+            try:
+                direct = await self._client.get(f"{self.url}/api/v2/app/version")
+                if direct.status_code == 200 and direct.text.strip():
+                    self._authenticated = True
+                    return True, f"Connected to qBittorrent ({direct.text.strip()})"
+            except Exception:
+                pass
+
             ok = await self.login()
             if not ok:
-                return False, "Invalid credentials or unauthorized"
-            # Attempt to query API version for additional verification
-            ver_resp = await self._client.get(f"{self.url}/api/v2/app/webapiVersion")
-            version_str = ver_resp.text.strip() if ver_resp.status_code == 200 else "ok"
+                return False, self._last_error or "Invalid credentials or unauthorized"
+
+            ver_resp = await self._client.get(f"{self.url}/api/v2/app/version")
+            if ver_resp.status_code == 200 and ver_resp.text.strip():
+                return True, f"Connected to qBittorrent ({ver_resp.text.strip()})"
+
+            ver_api = await self._client.get(f"{self.url}/api/v2/app/webapiVersion")
+            version_str = ver_api.text.strip() if ver_api.status_code == 200 else "ok"
             return True, f"Connected to qBittorrent (WebAPI v{version_str})"
         except Exception as exc:
             return False, str(exc)

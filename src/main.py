@@ -18,6 +18,7 @@ from src import __version__
 from src.config import Settings, load_settings
 from src.models.history import HistoryStore, VerificationStatus
 from src.routers.settings import router as settings_router
+from src.routers.system import router as system_router
 from src.routers.webhooks import router as webhooks_router
 from src.services.notifier import Notifier
 from src.services.pre_download_checker import PreDownloadInspector
@@ -97,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
     app.state.templates = templates
     app.include_router(settings_router)
+    app.include_router(system_router)
     app.include_router(webhooks_router)
 
     @app.get("/health")

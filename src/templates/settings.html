@@ -228,11 +228,108 @@
       padding: 12px 20px; border-top: 1px solid #334155; display: flex; justify-content: flex-end; gap: 10px;
     }
 
+    /* Live Log Viewer Styling */
+    .logs-header-row {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px;
+    }
+    .logs-actions-top a.btn-secondary {
+      text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .logs-toolbar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 16px;
+      background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px;
+    }
+    .logs-filter-group {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted);
+    }
+    .logs-filter-group select,
+    .logs-filter-group input[type="text"] {
+      background: var(--panel); color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 500; outline: none;
+    }
+    .logs-filter-group select:focus,
+    .logs-filter-group input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    .logs-search-group {
+      flex: 1 1 180px;
+    }
+    .logs-search-group input {
+      width: 100%;
+    }
+    .logs-checkbox-label {
+      display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; user-select: none;
+    }
+    .btn-refresh-logs {
+      padding: 6px 14px !important; font-size: 12px !important;
+    }
+
+    /* Terminal Console Window */
+    .log-terminal-wrap {
+      border: 1px solid var(--border); border-radius: 8px; background: #090d16;
+      overflow: hidden; box-shadow: inset 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .log-terminal-header {
+      display: flex; align-items: center; justify-content: space-between; padding: 8px 14px;
+      background: #0f172a; border-bottom: 1px solid #1e293b; font-size: 12px; color: var(--muted);
+    }
+    .terminal-dots { display: flex; gap: 6px; }
+    .terminal-dots .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .terminal-dots .dot.red { background: #ef4444; }
+    .terminal-dots .dot.yellow { background: #f59e0b; }
+    .terminal-dots .dot.green { background: #10b981; }
+    .terminal-title {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px;
+    }
+    .terminal-clear-btn {
+      background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: 4px;
+    }
+    .terminal-clear-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+    .log-terminal-body {
+      height: 480px; overflow-y: auto; padding: 12px 14px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 12px; line-height: 1.55; color: #cbd5e1; white-space: pre-wrap; word-break: break-all;
+    }
+    .log-terminal-body::-webkit-scrollbar { width: 8px; }
+    .log-terminal-body::-webkit-scrollbar-track { background: #090d16; }
+    .log-terminal-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .log-terminal-body::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    .log-line { display: block; margin-bottom: 2px; }
+    .log-ts { color: #64748b; margin-right: 8px; }
+    .log-badge {
+      display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px;
+      font-weight: 700; letter-spacing: .4px; margin-right: 8px; min-width: 58px; text-align: center;
+    }
+    .log-badge.INFO {
+      background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .log-badge.WARNING {
+      background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .log-badge.ERROR {
+      background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .log-badge.DEBUG {
+      background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+    .log-logger { color: #818cf8; margin-right: 6px; }
+    .log-msg { color: #f1f5f9; }
+    .log-line.level-ERROR .log-msg { color: #fca5a5; }
+    .log-line.level-WARNING .log-msg { color: #fde68a; }
+    .log-placeholder {
+      color: var(--muted); text-align: center; padding: 60px 20px; font-style: italic;
+    }
+
     @media (max-width: 768px) {
       .tabs-nav { flex-direction: column; }
       .tab-btn { width: 100%; justify-content: flex-start; }
       .save-bar-inner { flex-direction: column; align-items: stretch; }
       .binary-action-group { flex-direction: column; align-items: stretch; }
+      .logs-toolbar { flex-direction: column; align-items: stretch; }
+      .logs-filter-group { width: 100%; justify-content: space-between; }
+      .logs-search-group { width: 100%; }
+      .log-terminal-body { height: 360px; font-size: 11px; }
     }
 {% endblock %}
 
@@ -274,6 +371,10 @@
       <button type="button" class="tab-btn" data-tab="tab-system" role="tab" aria-selected="false" onclick="switchTab('tab-system')">
         <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
         System &amp; Binaries
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-logs" role="tab" aria-selected="false" onclick="switchTab('tab-logs')">
+        <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        System Logs
       </button>
     </nav>
 
@@ -630,6 +731,88 @@
       </section>
     </div>
 
+    <!-- Tab 6: System Logs -->
+    <div id="tab-logs" class="tab-panel" role="tabpanel">
+      <section class="section-card">
+        <div class="logs-header-row">
+          <div>
+            <h3>
+              <svg style="width:20px;height:20px;stroke:#60a5fa;fill:none;stroke-width:2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+              Live System Logs (verifyarr.log)
+            </h3>
+            <p class="desc" id="log-file-status">Streaming live daemon events, verification logs, and service traces.</p>
+          </div>
+          <div class="logs-actions-top">
+            <a href="/api/v1/system/logs/download" class="btn-secondary" download="verifyarr.log" title="Download raw verifyarr.log">
+              <svg style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download Log
+            </a>
+          </div>
+        </div>
+
+        <!-- Filter & Control Toolbar -->
+        <div class="logs-toolbar">
+          <div class="logs-filter-group">
+            <label for="log-level-filter">Level:</label>
+            <select id="log-level-filter" onchange="loadLogs()">
+              <option value="ALL" selected>All Levels</option>
+              <option value="INFO">INFO</option>
+              <option value="WARNING">WARNING</option>
+              <option value="ERROR">ERROR</option>
+              <option value="DEBUG">DEBUG</option>
+            </select>
+          </div>
+
+          <div class="logs-filter-group">
+            <label for="log-lines-filter">Lines:</label>
+            <select id="log-lines-filter" onchange="loadLogs()">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="250">250</option>
+              <option value="500">500</option>
+              <option value="1000">1000</option>
+            </select>
+          </div>
+
+          <div class="logs-filter-group logs-search-group">
+            <input type="text" id="log-search-input" placeholder="Search message text..." oninput="filterLogsClientSide()">
+          </div>
+
+          <div class="logs-filter-group logs-auto-refresh">
+            <label class="logs-checkbox-label">
+              <input type="checkbox" id="log-auto-refresh" onchange="toggleAutoRefresh(this.checked)">
+              <span>Auto-refresh (3s)</span>
+            </label>
+          </div>
+
+          <div class="logs-filter-group logs-auto-scroll">
+            <label class="logs-checkbox-label">
+              <input type="checkbox" id="log-auto-scroll" checked>
+              <span>Auto-scroll</span>
+            </label>
+          </div>
+
+          <button type="button" class="btn-secondary btn-refresh-logs" onclick="loadLogs(true)" title="Refresh logs now">
+            &#8635; Refresh
+          </button>
+        </div>
+
+        <!-- Log Console Container -->
+        <div class="log-terminal-wrap">
+          <div class="log-terminal-header">
+            <div class="terminal-dots">
+              <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+            </div>
+            <div class="terminal-title" id="terminal-stats-title">Showing 0 lines</div>
+            <button type="button" class="terminal-clear-btn" onclick="clearTerminalView()" title="Clear view">Clear</button>
+          </div>
+          <div id="log-console" class="log-terminal-body" tabindex="0">
+            <div class="log-placeholder">Loading system logs...</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <!-- Sticky Persistent Save Bar -->
     <div class="sticky-save-bar">
       <div class="save-bar-inner">
@@ -689,6 +872,9 @@
       });
       if (history.replaceState) {
         history.replaceState(null, null, '#' + tabId.replace('tab-', ''));
+      }
+      if (tabId === 'tab-logs') {
+        loadLogs();
       }
     }
 
@@ -1078,6 +1264,118 @@
       } finally {
         if (topBtn) topBtn.disabled = false;
         if (bottomBtn) bottomBtn.disabled = false;
+      }
+    }
+
+    // Live Log Inspector Functions
+    let _logsAutoRefreshTimer = null;
+    let _cachedLogLines = [];
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    async function loadLogs(isManual = false) {
+      const level = document.getElementById('log-level-filter')?.value || 'ALL';
+      const lines = document.getElementById('log-lines-filter')?.value || '100';
+      const consoleEl = document.getElementById('log-console');
+      const statsTitle = document.getElementById('terminal-stats-title');
+      const fileStatus = document.getElementById('log-file-status');
+
+      if (!consoleEl) return;
+      if (isManual) {
+        showToast('Refreshing system logs...', 'info', 1500);
+      }
+
+      try {
+        const url = `/api/v1/system/logs?lines=${encodeURIComponent(lines)}&level=${encodeURIComponent(level)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        _cachedLogLines = data.lines || [];
+        if (fileStatus && data.file_path) {
+          fileStatus.textContent = data.file_exists
+            ? `Active log file: ${data.file_path}`
+            : `Log file not found at ${data.file_path} (will be created automatically on service activity)`;
+        }
+
+        renderLogLines(_cachedLogLines);
+      } catch (err) {
+        consoleEl.innerHTML = `<div class="log-placeholder" style="color:#ef4444">Error fetching logs: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    function renderLogLines(lines) {
+      const consoleEl = document.getElementById('log-console');
+      const statsTitle = document.getElementById('terminal-stats-title');
+      const autoScroll = document.getElementById('log-auto-scroll')?.checked ?? true;
+      const searchTerm = document.getElementById('log-search-input')?.value.trim().toLowerCase() || '';
+
+      if (!consoleEl) return;
+
+      const filtered = searchTerm
+        ? lines.filter(l => (l.raw || l.message || '').toLowerCase().includes(searchTerm))
+        : lines;
+
+      if (statsTitle) {
+        statsTitle.textContent = `Showing ${filtered.length} of ${lines.length} lines`;
+      }
+
+      if (!filtered.length) {
+        consoleEl.innerHTML = `<div class="log-placeholder">No log entries found matching criteria.</div>`;
+        return;
+      }
+
+      let html = '';
+      for (const line of filtered) {
+        const lvl = escapeHtml(line.level || 'INFO');
+        const ts = escapeHtml(line.timestamp || '');
+        const lgr = escapeHtml(line.logger || '');
+        const msg = escapeHtml(line.message || line.raw || '');
+
+        html += `<div class="log-line level-${lvl}">`;
+        if (ts) html += `<span class="log-ts">${ts}</span>`;
+        html += `<span class="log-badge ${lvl}">${lvl}</span>`;
+        if (lgr) html += `<span class="log-logger">[${lgr}]:</span>`;
+        html += `<span class="log-msg">${msg}</span></div>`;
+      }
+
+      consoleEl.innerHTML = html;
+      if (autoScroll) {
+        consoleEl.scrollTop = consoleEl.scrollHeight;
+      }
+    }
+
+    function filterLogsClientSide() {
+      renderLogLines(_cachedLogLines);
+    }
+
+    function clearTerminalView() {
+      const consoleEl = document.getElementById('log-console');
+      if (consoleEl) {
+        consoleEl.innerHTML = '<div class="log-placeholder">Terminal view cleared. Click &#8635; Refresh to reload.</div>';
+      }
+    }
+
+    function toggleAutoRefresh(enabled) {
+      if (_logsAutoRefreshTimer) {
+        clearInterval(_logsAutoRefreshTimer);
+        _logsAutoRefreshTimer = null;
+      }
+      if (enabled) {
+        _logsAutoRefreshTimer = setInterval(() => {
+          const logsTab = document.getElementById('tab-logs');
+          if (logsTab && logsTab.classList.contains('active')) {
+            loadLogs(false);
+          }
+        }, 3000);
       }
     }
   </script>

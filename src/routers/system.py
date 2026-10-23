@@ -1,0 +1,120 @@
+"""System management router: Live logging viewer, log download, and diagnostics."""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/api/v1/system", tags=["System"])
+
+DEFAULT_LOG_PATH = Path(r"C:\Verifyarr\data\verifyarr.log")
+LOG_REGEX = re.compile(r"^(\d{4}-\d{2}-\d{2}T[\d:\.\-+]+)\s+([A-Z]+)\s+([\w\.\-]+):\s+(.*)$")
+
+
+def resolve_log_path() -> Path:
+    """Resolve the active log file across Windows service, Docker, and dev environments."""
+    env_path = os.getenv("VERIFYARR_LOG_PATH")
+    if env_path is not None:
+        return Path(env_path)
+
+    if DEFAULT_LOG_PATH.exists():
+        return DEFAULT_LOG_PATH
+
+    local_data = Path("data") / "verifyarr.log"
+    if local_data.exists():
+        return local_data
+
+    return DEFAULT_LOG_PATH
+
+
+def _read_tail_lines(log_path: Path, lines: int) -> list[str]:
+    """Synchronously read the tail of the log file in a worker thread."""
+    with open(log_path, encoding="utf-8", errors="replace") as f:
+        all_lines = f.readlines()
+    return all_lines[-lines:]
+
+
+@router.get("/logs")
+def get_logs(
+    lines: int = Query(100, ge=10, le=1000),
+    level: str | None = None,
+    search: str | None = None,
+) -> dict[str, Any]:
+    """Retrieve and parse the most recent log entries from verifyarr.log."""
+    log_path = resolve_log_path()
+    if not log_path.exists():
+        return {"lines": [], "total": 0, "file_path": str(log_path), "file_exists": False}
+
+    try:
+        tail = _read_tail_lines(log_path, lines)
+        parsed: list[dict[str, str]] = []
+        target_level = level.strip().upper() if level and level.strip().upper() != "ALL" else None
+        target_search = search.strip().lower() if search and search.strip() else None
+
+        for line in tail:
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            match = LOG_REGEX.match(stripped)
+            if match:
+                lvl = match.group(2)
+                if target_level and lvl != target_level:
+                    continue
+                if target_search and target_search not in stripped.lower():
+                    continue
+
+                parsed.append(
+                    {
+                        "timestamp": match.group(1),
+                        "level": lvl,
+                        "logger": match.group(3),
+                        "message": match.group(4),
+                        "raw": stripped,
+                    }
+                )
+            else:
+                if not target_level:
+                    if target_search and target_search not in stripped.lower():
+                        continue
+                    parsed.append(
+                        {
+                            "timestamp": "",
+                            "level": "INFO",
+                            "logger": "",
+                            "message": stripped,
+                            "raw": stripped,
+                        }
+                    )
+
+        return {
+            "lines": parsed,
+            "total": len(parsed),
+            "file_path": str(log_path),
+            "file_exists": True,
+        }
+    except Exception as exc:
+        logger.error("Failed reading log file %s: %s", log_path, exc)
+        raise HTTPException(status_code=500, detail=f"Error reading log file: {exc}") from exc
+
+
+@router.get("/logs/download")
+async def download_logs() -> FileResponse:
+    """Download the full verifyarr.log file."""
+    log_path = resolve_log_path()
+    if not log_path.exists():
+        raise HTTPException(status_code=404, detail=f"Log file not found at {log_path}")
+
+    return FileResponse(
+        path=str(log_path),
+        filename="verifyarr.log",
+        media_type="text/plain",
+    )

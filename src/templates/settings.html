@@ -229,6 +229,28 @@
     }
 
     /* Live Log Viewer Styling */
+    @keyframes pulseGreen {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .pulse-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #10b981; display: inline-block;
+      animation: pulseGreen 2s infinite; flex-shrink: 0;
+    }
+    .pulse-dot.paused {
+      background: #94a3b8; animation: none; box-shadow: none;
+    }
+
+    .max-h-\[480px\] { max-height: 480px; }
+    .overflow-y-auto { overflow-y: auto; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .text-xs { font-size: 12px; }
+    .bg-black\/60 { background: rgba(0, 0, 0, 0.6) !important; }
+    .rounded-xl { border-radius: 12px; }
+    .p-3 { padding: 12px; }
+
     .logs-header-row {
       display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px;
     }
@@ -372,7 +394,7 @@
         <svg viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
         System &amp; Binaries
       </button>
-      <button type="button" class="tab-btn" data-tab="tab-logs" role="tab" aria-selected="false" onclick="switchTab('tab-logs')">
+      <button type="button" class="tab-btn" data-tab="section-logs" role="tab" aria-selected="false" onclick="switchTab('section-logs')">
         <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
         System Logs
       </button>
@@ -731,86 +753,77 @@
       </section>
     </div>
 
-    <!-- Tab 6: System Logs -->
-    <div id="tab-logs" class="tab-panel" role="tabpanel">
-      <section class="section-card">
-        <div class="logs-header-row">
-          <div>
-            <h3>
-              <svg style="width:20px;height:20px;stroke:#60a5fa;fill:none;stroke-width:2" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
-              Live System Logs (verifyarr.log)
-            </h3>
-            <p class="desc" id="log-file-status">Streaming live daemon events, verification logs, and service traces.</p>
-          </div>
-          <div class="logs-actions-top">
-            <a href="/api/v1/system/logs/download" class="btn-secondary" download="verifyarr.log" title="Download raw verifyarr.log">
-              <svg style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              Download Log
-            </a>
-          </div>
+    <!-- Tab: System Logs (#section-logs) -->
+    <div id="section-logs" class="tab-panel settings-card section-card" role="tabpanel">
+      <div class="logs-header-row">
+        <div>
+          <h3 style="display:flex;align-items:center;gap:10px;">
+            <span class="pulse-dot" id="logs-pulse-dot" title="Live Streaming"></span>
+            System &amp; Service Logs
+          </h3>
+          <p class="desc" id="log-file-status">Streaming live daemon events, verification logs, and service traces from verifyarr.log.</p>
+        </div>
+        <div class="logs-actions-top">
+          <a href="/api/v1/system/logs/download" class="btn-secondary" download="verifyarr.log" title="Download raw verifyarr.log">
+            <svg style="width:14px;height:14px;display:inline-block;vertical-align:middle;margin-right:4px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Download Log
+          </a>
+        </div>
+      </div>
+
+      <!-- Filter & Control Toolbar -->
+      <div class="logs-toolbar">
+        <div class="logs-filter-group">
+          <label for="log-level-filter">Level:</label>
+          <select id="log-level-filter" onchange="loadLogs()">
+            <option value="ALL" selected>All Levels</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+          </select>
         </div>
 
-        <!-- Filter & Control Toolbar -->
-        <div class="logs-toolbar">
-          <div class="logs-filter-group">
-            <label for="log-level-filter">Level:</label>
-            <select id="log-level-filter" onchange="loadLogs()">
-              <option value="ALL" selected>All Levels</option>
-              <option value="INFO">INFO</option>
-              <option value="WARNING">WARNING</option>
-              <option value="ERROR">ERROR</option>
-              <option value="DEBUG">DEBUG</option>
-            </select>
-          </div>
-
-          <div class="logs-filter-group">
-            <label for="log-lines-filter">Lines:</label>
-            <select id="log-lines-filter" onchange="loadLogs()">
-              <option value="50">50</option>
-              <option value="100" selected>100</option>
-              <option value="250">250</option>
-              <option value="500">500</option>
-              <option value="1000">1000</option>
-            </select>
-          </div>
-
-          <div class="logs-filter-group logs-search-group">
-            <input type="text" id="log-search-input" placeholder="Search message text..." oninput="filterLogsClientSide()">
-          </div>
-
-          <div class="logs-filter-group logs-auto-refresh">
-            <label class="logs-checkbox-label">
-              <input type="checkbox" id="log-auto-refresh" onchange="toggleAutoRefresh(this.checked)">
-              <span>Auto-refresh (3s)</span>
-            </label>
-          </div>
-
-          <div class="logs-filter-group logs-auto-scroll">
-            <label class="logs-checkbox-label">
-              <input type="checkbox" id="log-auto-scroll" checked>
-              <span>Auto-scroll</span>
-            </label>
-          </div>
-
-          <button type="button" class="btn-secondary btn-refresh-logs" onclick="loadLogs(true)" title="Refresh logs now">
-            &#8635; Refresh
-          </button>
+        <div class="logs-filter-group">
+          <label for="log-lines-filter">Lines:</label>
+          <select id="log-lines-filter" onchange="loadLogs()">
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="250">250</option>
+          </select>
         </div>
 
-        <!-- Log Console Container -->
-        <div class="log-terminal-wrap">
-          <div class="log-terminal-header">
-            <div class="terminal-dots">
-              <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
-            </div>
-            <div class="terminal-title" id="terminal-stats-title">Showing 0 lines</div>
-            <button type="button" class="terminal-clear-btn" onclick="clearTerminalView()" title="Clear view">Clear</button>
+        <div class="logs-filter-group logs-search-group">
+          <input type="text" id="log-search-input" placeholder="Search message text..." oninput="filterLogsClientSide()">
+        </div>
+
+        <button type="button" class="btn-secondary" id="btn-poll-toggle" onclick="togglePolling()">
+          Pause Poll
+        </button>
+
+        <a href="/api/v1/system/logs/download" class="btn-secondary" download="verifyarr.log" title="Download raw verifyarr.log">
+          Download Logs
+        </a>
+
+        <button type="button" class="btn-secondary btn-refresh-logs" onclick="loadLogs(true)" title="Refresh logs now">
+          &#8635; Refresh
+        </button>
+      </div>
+
+      <!-- Log Terminal Container -->
+      <div class="log-terminal-wrap">
+        <div class="log-terminal-header">
+          <div class="terminal-dots">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
           </div>
-          <div id="log-console" class="log-terminal-body" tabindex="0">
+          <div class="terminal-title" id="terminal-stats-title">Showing 0 lines</div>
+          <button type="button" class="terminal-clear-btn" onclick="clearTerminalView()" title="Clear view">Clear</button>
+        </div>
+        <div id="log-console" class="max-h-[480px] overflow-y-auto font-mono text-xs bg-black/60 rounded-xl p-3 log-terminal-body" tabindex="0">
+          <div id="log-lines-output">
             <div class="log-placeholder">Loading system logs...</div>
           </div>
         </div>
-      </section>
+      </div>
     </div>
 
     <!-- Sticky Persistent Save Bar -->
@@ -862,19 +875,27 @@
   <script>
     // Tab switching logic
     function switchTab(tabId) {
+      const cleanId = tabId.startsWith('#') ? tabId.slice(1) : tabId;
       document.querySelectorAll('.tab-btn').forEach(btn => {
-        const isCurrent = btn.getAttribute('data-tab') === tabId;
+        const target = btn.getAttribute('data-tab');
+        const isCurrent = (target === cleanId) || 
+                          (target.replace(/^(tab|section)-/, '') === cleanId.replace(/^(tab|section)-/, ''));
         btn.classList.toggle('active', isCurrent);
         btn.setAttribute('aria-selected', isCurrent ? 'true' : 'false');
       });
       document.querySelectorAll('.tab-panel').forEach(panel => {
-        panel.classList.toggle('active', panel.id === tabId);
+        const isCurrent = (panel.id === cleanId) || 
+                          (panel.id.replace(/^(tab|section)-/, '') === cleanId.replace(/^(tab|section)-/, ''));
+        panel.classList.toggle('active', isCurrent);
       });
       if (history.replaceState) {
-        history.replaceState(null, null, '#' + tabId.replace('tab-', ''));
+        history.replaceState(null, null, '#' + cleanId.replace(/^(tab|section)-/, ''));
       }
-      if (tabId === 'tab-logs') {
+      if (cleanId === 'section-logs' || cleanId === 'tab-logs' || cleanId === 'logs') {
         loadLogs();
+        if (_isPolling) startPolling();
+      } else {
+        stopPolling();
       }
     }
 
@@ -882,9 +903,12 @@
     document.addEventListener('DOMContentLoaded', () => {
       const hash = window.location.hash.replace('#', '');
       if (hash) {
-        const targetTab = 'tab-' + hash;
-        if (document.getElementById(targetTab)) {
-          switchTab(targetTab);
+        const candidates = [hash, 'tab-' + hash, 'section-' + hash];
+        for (const c of candidates) {
+          if (document.getElementById(c) || document.querySelector(`[data-tab="${c}"]`)) {
+            switchTab(c);
+            break;
+          }
         }
       }
     });
@@ -1268,8 +1292,9 @@
     }
 
     // Live Log Inspector Functions
-    let _logsAutoRefreshTimer = null;
     let _cachedLogLines = [];
+    let _pollInterval = null;
+    let _isPolling = true;
 
     function escapeHtml(str) {
       if (!str) return '';
@@ -1281,10 +1306,47 @@
         .replace(/'/g, '&#039;');
     }
 
+    function startPolling() {
+      if (_pollInterval) clearInterval(_pollInterval);
+      _pollInterval = setInterval(() => {
+        const logsTab = document.getElementById('section-logs') || document.getElementById('tab-logs');
+        if (logsTab && logsTab.classList.contains('active')) {
+          loadLogs(false);
+        }
+      }, 3000);
+      const dot = document.getElementById('logs-pulse-dot');
+      if (dot) dot.classList.remove('paused');
+      const btn = document.getElementById('btn-poll-toggle');
+      if (btn) btn.textContent = 'Pause Poll';
+    }
+
+    function stopPolling(userInitiated = false) {
+      if (_pollInterval) {
+        clearInterval(_pollInterval);
+        _pollInterval = null;
+      }
+      const dot = document.getElementById('logs-pulse-dot');
+      if (dot) dot.classList.add('paused');
+      const btn = document.getElementById('btn-poll-toggle');
+      if (btn && userInitiated) btn.textContent = 'Resume Poll';
+    }
+
+    function togglePolling() {
+      if (_isPolling) {
+        _isPolling = false;
+        stopPolling(true);
+      } else {
+        _isPolling = true;
+        startPolling();
+        loadLogs(true);
+      }
+    }
+
     async function loadLogs(isManual = false) {
       const level = document.getElementById('log-level-filter')?.value || 'ALL';
       const lines = document.getElementById('log-lines-filter')?.value || '100';
       const consoleEl = document.getElementById('log-console');
+      const outputEl = document.getElementById('log-lines-output') || consoleEl;
       const statsTitle = document.getElementById('terminal-stats-title');
       const fileStatus = document.getElementById('log-file-status');
 
@@ -1308,17 +1370,19 @@
 
         renderLogLines(_cachedLogLines);
       } catch (err) {
-        consoleEl.innerHTML = `<div class="log-placeholder" style="color:#ef4444">Error fetching logs: ${escapeHtml(err.message)}</div>`;
+        if (outputEl) {
+          outputEl.innerHTML = `<div class="log-placeholder" style="color:#ef4444">Error fetching logs: ${escapeHtml(err.message)}</div>`;
+        }
       }
     }
 
     function renderLogLines(lines) {
       const consoleEl = document.getElementById('log-console');
+      const outputEl = document.getElementById('log-lines-output') || consoleEl;
       const statsTitle = document.getElementById('terminal-stats-title');
-      const autoScroll = document.getElementById('log-auto-scroll')?.checked ?? true;
       const searchTerm = document.getElementById('log-search-input')?.value.trim().toLowerCase() || '';
 
-      if (!consoleEl) return;
+      if (!outputEl) return;
 
       const filtered = searchTerm
         ? lines.filter(l => (l.raw || l.message || '').toLowerCase().includes(searchTerm))
@@ -1329,7 +1393,7 @@
       }
 
       if (!filtered.length) {
-        consoleEl.innerHTML = `<div class="log-placeholder">No log entries found matching criteria.</div>`;
+        outputEl.innerHTML = `<div class="log-placeholder">No log entries found matching criteria.</div>`;
         return;
       }
 
@@ -1347,8 +1411,8 @@
         html += `<span class="log-msg">${msg}</span></div>`;
       }
 
-      consoleEl.innerHTML = html;
-      if (autoScroll) {
+      outputEl.innerHTML = html;
+      if (consoleEl) {
         consoleEl.scrollTop = consoleEl.scrollHeight;
       }
     }
@@ -1358,25 +1422,12 @@
     }
 
     function clearTerminalView() {
-      const consoleEl = document.getElementById('log-console');
-      if (consoleEl) {
-        consoleEl.innerHTML = '<div class="log-placeholder">Terminal view cleared. Click &#8635; Refresh to reload.</div>';
+      const outputEl = document.getElementById('log-lines-output') || document.getElementById('log-console');
+      if (outputEl) {
+        outputEl.innerHTML = '<div class="log-placeholder">Terminal view cleared. Click &#8635; Refresh to reload.</div>';
       }
-    }
-
-    function toggleAutoRefresh(enabled) {
-      if (_logsAutoRefreshTimer) {
-        clearInterval(_logsAutoRefreshTimer);
-        _logsAutoRefreshTimer = null;
-      }
-      if (enabled) {
-        _logsAutoRefreshTimer = setInterval(() => {
-          const logsTab = document.getElementById('tab-logs');
-          if (logsTab && logsTab.classList.contains('active')) {
-            loadLogs(false);
-          }
-        }, 3000);
-      }
+      const statsTitle = document.getElementById('terminal-stats-title');
+      if (statsTitle) statsTitle.textContent = 'Showing 0 lines';
     }
   </script>
 {% endblock %}

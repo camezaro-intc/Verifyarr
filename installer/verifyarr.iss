@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "1.5.2"
+  #define AppVersion "1.5.3"
 #endif
 
 [Setup]
@@ -31,11 +31,12 @@ Source: "..\config.example.yaml"; DestDir: "{app}"; DestName: "config.yaml"; Fla
 Name: "{app}\data"; Flags: uninsneveruninstall
 
 [Tasks]
-Name: "installservice"; Description: "Register and start Verifyarr as a background Windows Service (NSSM)"; Flags: checkedonce
+Name: "installservice"; Description: "Register and start Verifyarr as a background Windows Service (NSSM)"
 Name: "installtesseract"; Description: "Download and install Tesseract OCR engine (Recommended for Tier 3B Mockbuster OCR)"; GroupDescription: "Optional OCR Utilities:"; Flags: unchecked; Check: ShouldOfferTesseract
 
 [Run]
 Filename: "{app}\scripts\windows\install-service.bat"; Parameters: "--no-pause"; Description: "Installing service"; Flags: runhidden; Tasks: installservice
+Filename: "net.exe"; Parameters: "start Verifyarr"; Description: "Starting Verifyarr service"; Flags: runhidden
 Filename: "http://localhost:7979"; Flags: shellexec runasoriginaluser postinstall nowait; Description: "Open Verifyarr Web Dashboard"
 
 [Code]
@@ -140,5 +141,8 @@ begin
         end;
       end;
     end;
+
+    // Ensure the Windows service is started on upgrade or fresh installation
+    Exec('net.exe', 'start Verifyarr', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;

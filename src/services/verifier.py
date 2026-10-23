@@ -499,6 +499,7 @@ class Verifier:
             checks=checks,
             remediation=remediation or [],
             whitelisted=whitelisted,
+            download_hash=job.download_id,
         )
 
     async def _record_error(self, job: VerificationJob, message: str) -> HistoryEntry:

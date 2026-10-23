@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 from datetime import UTC, datetime
@@ -54,6 +55,11 @@ class HistoryEntry(BaseModel):
     checks: list[CheckResult] = Field(default_factory=list)
     remediation: list[str] = Field(default_factory=list)
     whitelisted: bool = False
+    download_hash: str | None = None
+
+    @property
+    def source_app(self) -> str:
+        return self.app
 
     @property
     def can_force_approve(self) -> bool:
@@ -86,7 +92,8 @@ CREATE TABLE IF NOT EXISTS history (
     failure_reasons TEXT NOT NULL DEFAULT '[]',
     checks TEXT NOT NULL DEFAULT '[]',
     remediation TEXT NOT NULL DEFAULT '[]',
-    whitelisted INTEGER NOT NULL DEFAULT 0
+    whitelisted INTEGER NOT NULL DEFAULT 0,
+    download_hash TEXT
 );
 CREATE TABLE IF NOT EXISTS whitelist (
     release_key TEXT PRIMARY KEY,
@@ -121,6 +128,10 @@ class HistoryStore:
                 conn.execute("PRAGMA journal_mode=WAL;")
                 conn.execute("PRAGMA synchronous=NORMAL;")
             conn.executescript(_SCHEMA)
+            try:
+                conn.execute("ALTER TABLE history ADD COLUMN download_hash TEXT;")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
             self._conn = conn
         logger.info("History store ready at %s (WAL enabled)", self._database_path)
@@ -150,8 +161,8 @@ class HistoryStore:
             cursor = conn.execute(
                 """INSERT INTO history (timestamp, app, title, release_name, file_path, file_id,
                        expected_runtime_min, probed_runtime_min, status, failure_reasons,
-                       checks, remediation, whitelisted)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       checks, remediation, whitelisted, download_hash)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     entry.timestamp.isoformat(),
                     entry.app,
@@ -166,6 +177,7 @@ class HistoryStore:
                     json.dumps([c.model_dump() for c in entry.checks]),
                     json.dumps(entry.remediation),
                     int(entry.whitelisted),
+                    entry.download_hash,
                 ),
             )
             conn.commit()
@@ -247,4 +259,9 @@ class HistoryStore:
         data["checks"] = json.loads(data["checks"])
         data["remediation"] = json.loads(data["remediation"])
         data["whitelisted"] = bool(data["whitelisted"])
+        if not data.get("download_hash"):
+            combined = " ".join(data.get("remediation", []) + data.get("failure_reasons", []))
+            m = re.search(r"\b([0-9a-fA-F]{40})\b", combined)
+            if m:
+                data["download_hash"] = m.group(1).lower()
         return HistoryEntry.model_validate(data)

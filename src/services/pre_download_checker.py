@@ -251,6 +251,7 @@ class PreDownloadInspector:
             failure_reasons=[rejection_reason],
             checks=[check],
             remediation=remediation_actions,
+            download_hash=download_id,
         )
         await self._history.add(entry)
 

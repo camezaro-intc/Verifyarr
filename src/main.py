@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 from src import __version__
 from src.config import Settings, load_settings
 from src.models.history import HistoryStore, VerificationStatus
+from src.routers.history import router as history_router
 from src.routers.settings import router as settings_router
 from src.routers.system import router as system_router
 from src.routers.webhooks import router as webhooks_router
@@ -100,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(settings_router)
     app.include_router(system_router)
     app.include_router(webhooks_router)
+    app.include_router(history_router)
 
     @app.get("/health")
     async def health(request: Request) -> dict[str, Any]:

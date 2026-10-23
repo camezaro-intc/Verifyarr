@@ -324,9 +324,70 @@
     .trace-terminal-box::-webkit-scrollbar-track { background: #090d16; }
     .trace-terminal-box::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
     .trace-terminal-box::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+    /* Update Alert Banner Styles */
+    .hidden { display: none !important; }
+    .mb-6 { margin-bottom: 24px; }
+    .bg-amber-500\/10 { background-color: rgba(245, 158, 11, 0.1) !important; }
+    .border-amber-500\/30 { border-color: rgba(245, 158, 11, 0.3) !important; }
+    .border { border-width: 1px; border-style: solid; }
+    .justify-between { justify-content: space-between; }
+    .shadow-lg { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -4px rgba(0, 0, 0, 0.3); }
+    .gap-3 { gap: 12px; }
+    .gap-2 { gap: 8px; }
+    .inline-block { display: inline-block; }
+    .w-2\.5 { width: 10px; }
+    .h-2\.5 { height: 10px; }
+    .rounded-full { border-radius: 9999px; }
+    .bg-amber-400 { background-color: #fbbf24 !important; }
+    .bg-amber-500 { background-color: #f59e0b !important; }
+    .hover\:bg-amber-600:hover { background-color: #d97706 !important; }
+    .text-sm { font-size: 14px; }
+    .font-semibold { font-weight: 600; }
+    .font-bold { font-weight: 700; }
+    .text-amber-200 { color: #fde68a !important; }
+    .text-slate-400 { color: #94a3b8 !important; }
+    .text-slate-950 { color: #020617 !important; }
+    .text-slate-200 { color: #e2e8f0 !important; }
+    .hover\:text-slate-200:hover { color: #e2e8f0 !important; }
+    .px-3 { padding-left: 12px; padding-right: 12px; }
+    .py-1\.5 { padding-top: 6px; padding-bottom: 6px; }
+    .p-1\.5 { padding: 6px; }
+    .transition { transition-property: all; transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1); transition-duration: 150ms; }
+    #update-alert-banner p { margin: 0; }
+    @keyframes ping {
+      75%, 100% {
+        transform: scale(2);
+        opacity: 0;
+      }
+    }
+    .animate-ping {
+      animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
 {% endblock %}
 
 {% block content %}
+    <!-- Update Alert Banner -->
+    <div id="update-alert-banner" class="hidden mb-6 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-center justify-between shadow-lg">
+      <div class="flex items-center gap-3">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping"></span>
+        <div>
+          <p class="text-sm font-semibold text-amber-200">
+            New Update Available: <span id="banner-latest-version" class="font-mono font-bold"></span>
+          </p>
+          <p class="text-xs text-slate-400">A new version is available. You can review and apply it in Settings.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2">
+        <a href="/settings#section-updates" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-semibold text-xs rounded-lg transition">
+          Review & Update
+        </a>
+        <button type="button" onclick="document.getElementById('update-alert-banner').classList.add('hidden')" class="p-1.5 text-slate-400 hover:text-slate-200 text-xs">
+          ✕
+        </button>
+      </div>
+    </div>
+
     <!-- 1. Metric KPI Stat Cards -->
     <section class="stats grid grid-cols-2 gap-3 md:flex md:flex-wrap">
       <div class="stat"><b>{{ counts.PASSED }}</b><span>Passed</span></div>
@@ -591,6 +652,21 @@
 
 {% block scripts %}
   <script>
+    async function checkForUpdatesBanner() {
+      try {
+        const res = await fetch('/api/v1/system/update/check');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.update_available) {
+          document.getElementById('banner-latest-version').textContent = 'v' + data.latest_version;
+          document.getElementById('update-alert-banner').classList.remove('hidden');
+        }
+      } catch (err) {
+        console.debug('Update check skipped:', err);
+      }
+    }
+    document.addEventListener('DOMContentLoaded', checkForUpdatesBanner);
+
     let currentFilter = 'ALL';
 
     function filterEntries(status, btn) {

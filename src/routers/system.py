@@ -8,8 +8,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -139,4 +140,34 @@ async def get_system_correlated_logs(history_id: int, request: Request) -> dict[
     settings = getattr(request.app.state, "settings", None)
     aggregator = LogAggregator(settings=settings, history_store=history_store)
     return await aggregator.aggregate_for_record(record)
+
+
+class UpdateApplyPayload(BaseModel):
+    download_url: str
+
+
+@router.get("/update/check")
+async def check_update() -> dict[str, Any]:
+    """Check GitHub releases for available Verifyarr updates."""
+    from src.services.updater import UpdateManager
+
+    updater = UpdateManager()
+    return await updater.check_for_updates()
+
+
+@router.post("/update/apply")
+async def apply_system_update(
+    payload: UpdateApplyPayload,
+    background_tasks: BackgroundTasks,
+) -> dict[str, str]:
+    """Trigger background update download, installation, and service restart."""
+    from src.services.updater import UpdateManager
+
+    if not payload.download_url or not payload.download_url.strip():
+        raise HTTPException(status_code=400, detail="Missing or empty download_url")
+
+    updater = UpdateManager()
+    background_tasks.add_task(updater.apply_update, payload.download_url)
+    return {"status": "restarting"}
+
 

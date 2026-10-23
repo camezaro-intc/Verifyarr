@@ -8,15 +8,21 @@
 Verifyarr is a companion service for **Radarr**, **Sonarr** and **Jellyfin**. It receives a webhook every time a file is imported or upgraded, inspects the file with `ffprobe`/`ffmpeg`, and only lets media into your library if it is what it claims to be. Bad files are logged (dry-run) or automatically deleted, blocklisted and re-searched.
 
 ```text
-[ Radarr / Sonarr ] --(Webhook: On Import / On Upgrade)--> [ Verifyarr :7979 ]
+[ Radarr / Sonarr ] --(Webhook: On Grab / On Import / On Upgrade)--> [ Verifyarr :7979 ]
+     0. Tier 0 Pre-Download Manifest Inspection (qBittorrent Web API)
+          MALICIOUS / FAKE RELEASE        CLEAN VIDEO / IN PROGRESS
+             |                                     |
+          Purge from qBit, remove from      Allow torrent download to finish
+          Servarr queue, blocklist, re-search      |
+                                                   v
      1. Path translation (Windows E:\ <-> Docker /media/)
      2. Concurrency throttle (asyncio.Semaphore)
      3. Tier 1 runtime delta -> Tier 2 audio sanity -> Tier 3 freeze + OCR
-          PASSED                          FAILED
-            |                               |
-   Jellyfin library refresh        dry_run: log + alert (Discord)
-                                   live:    delete file, blocklist release,
-                                            trigger replacement search, alert
+          PASSED                                  FAILED
+            |                                       |
+   Jellyfin library refresh                dry_run: log + alert (Discord)
+                                           live:    delete file, blocklist release,
+                                                    trigger replacement search, alert
 ```
 
 ## Table of contents
@@ -195,7 +201,10 @@ Configure webhooks in **Radarr**, and repeat in **Sonarr**:
 2. Click the **+** (Add Connection) tile and select **Webhook**.
 3. Fill in the connection form:
    - **Name:** `Verifyarr`
-   - **Notification Triggers:** Tick **On Download** and **On Upgrade** (newer versions label these **On File Import** and **On File Upgrade**). Leave **On Grab** and **On Rename** unticked.
+   - **Notification Triggers:**
+     - Tick **On Download** and **On Upgrade** (newer versions label these **On File Import** and **On File Upgrade**).
+     - Tick **On Grab** if you use qBittorrent and want **Tier 0 Pre-Download Inspection** (instantly purges archives, `.exe`, and zero-video fake releases before bytes download).
+     - Leave **On Rename** unticked.
    - **URL:** `http://localhost:7979/api/v1/webhook` (or `http://verifyarr:7979/api/v1/webhook` if using Docker container names).
    - **Method:** `POST`
 4. Click **Test**. Verifyarr will return HTTP 200 with `{"status": "ok", "message": "Verifyarr webhook test successful"}`.
@@ -241,6 +250,24 @@ Settings can be edited via the [Web UI](#web-settings-management) or in `config.
 | `jellyfin.url` | `"http://localhost:8096"` | Base URL of Jellyfin. |
 | `jellyfin.api_key` | `""` | Jellyfin API token. |
 
+### `qbittorrent`
+| Key | Default | Description |
+|-----|---------|-------------|
+| `qbittorrent.enabled` | `false` | Enable Tier 0 pre-download torrent inspection. |
+| `qbittorrent.url` | `"http://localhost:8080"` | Base URL of the qBittorrent Web UI. |
+| `qbittorrent.username` | `"admin"` | Username for qBittorrent Web API authentication. |
+| `qbittorrent.password` | `""` | Password for qBittorrent Web API. |
+| `qbittorrent.inspect_on_grab` | `true` | Intercept Servarr **On Grab** webhooks to inspect new torrent contents. |
+| `qbittorrent.metadata_timeout_seconds` | `30` | Maximum wait time for torrent file tree manifest to resolve from peers. |
+| `qbittorrent.blocked_extensions` | `[".7z", ".zip", ".rar", ".exe", ".iso", ".bat"]` | Blacklisted file extensions that trigger immediate purge and Servarr blocklisting. |
+
+### `binaries`
+| Key | Default | Description |
+|-----|---------|-------------|
+| `binaries.ffmpeg_path` | `""` | Path to `ffmpeg` executable (leave empty for automatic detection). |
+| `binaries.ffprobe_path` | `""` | Path to `ffprobe` executable (leave empty for automatic detection). |
+| `binaries.tesseract_path` | `""` | Path to `tesseract` executable (leave empty for automatic detection). |
+
 ---
 
 ## How results work
@@ -249,7 +276,8 @@ Settings can be edited via the [Web UI](#web-settings-management) or in `config.
 |--------|---------|
 | `PASSED` | All checks passed. A Jellyfin refresh is requested (coalesced for season packs). |
 | `DRY_RUN` | Checks failed but `dry_run` is on, so the file was kept and nothing was blocklisted. |
-| `REJECTED` | Checks failed in live mode: the file was deleted, the release blocklisted, and a replacement search triggered. |
+| `REJECTED` | Post-import checks failed in live mode: the file was deleted, the release blocklisted, and a replacement search triggered. |
+| `REJECTED_PRE_DOWNLOAD` | Tier 0 check failed: torrent contained blacklisted archives/executables or zero video containers. Purged from qBittorrent, removed from the Servarr queue, blocklisted, and a replacement search triggered before downloading to disk. |
 | `ERROR` | File could not be verified (file not found, `ffprobe` failure). Never remediated automatically. |
 
 **Force Approve**: Click to whitelist any false positive (e.g. extended cuts). Whitelisted releases bypass future verification and trigger a Jellyfin library scan.
@@ -265,6 +293,9 @@ Settings can be edited via the [Web UI](#web-settings-management) or in `config.
 | `GET` | `/api/v1/settings` | Retrieve active configuration as JSON |
 | `POST` | `/api/v1/settings` | Save settings atomically to disk and hot-reload in memory |
 | `POST` | `/api/v1/settings/test-connection` | Test credentials against Radarr, Sonarr, or Jellyfin |
+| `POST` | `/api/v1/settings/test-qbittorrent` | Test authentication against qBittorrent Web API |
+| `POST` | `/api/v1/settings/auto-detect-binaries` | Auto-detect installed paths for `ffprobe`, `ffmpeg`, and `tesseract` |
+| `GET` | `/api/v1/settings/browse-fs` | Server-side filesystem navigator restricted to specific binaries |
 | `POST` | `/api/v1/webhook` | Servarr webhook ingestion endpoint |
 | `POST` | `/api/v1/whitelist/{item_id}` | Force-approve a rejected release and refresh Jellyfin |
 | `GET` | `/health` | Application health and mode status probe |

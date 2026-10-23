@@ -337,8 +337,15 @@
     }
     .log-logger { color: #818cf8; margin-right: 6px; }
     .log-msg { color: #f1f5f9; }
-    .log-line.level-ERROR .log-msg { color: #fca5a5; }
-    .log-line.level-WARNING .log-msg { color: #fde68a; }
+    .log-line.level-ERROR { color: #ef4444; }
+    .log-line.level-ERROR .log-msg { color: #f87171; }
+    .log-line.level-WARNING { color: #f59e0b; }
+    .log-line.level-WARNING .log-msg { color: #fbbf24; }
+    .log-line.log-passed { color: #10b981; }
+    .log-line.log-passed .log-msg { color: #34d399; }
+    .log-line.log-passed .log-badge {
+      background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);
+    }
     .log-placeholder {
       color: var(--muted); text-align: center; padding: 60px 20px; font-style: italic;
     }
@@ -775,7 +782,7 @@
       <div class="logs-toolbar">
         <div class="logs-filter-group">
           <label for="log-level-filter">Level:</label>
-          <select id="log-level-filter" onchange="loadLogs()">
+          <select id="log-level-filter" onchange="fetchLogs()">
             <option value="ALL" selected>All Levels</option>
             <option value="INFO">INFO</option>
             <option value="WARNING">WARNING</option>
@@ -785,7 +792,7 @@
 
         <div class="logs-filter-group">
           <label for="log-lines-filter">Lines:</label>
-          <select id="log-lines-filter" onchange="loadLogs()">
+          <select id="log-lines-filter" onchange="fetchLogs()">
             <option value="50">50</option>
             <option value="100" selected>100</option>
             <option value="250">250</option>
@@ -804,7 +811,7 @@
           Download Logs
         </a>
 
-        <button type="button" class="btn-secondary btn-refresh-logs" onclick="loadLogs(true)" title="Refresh logs now">
+        <button type="button" class="btn-secondary btn-refresh-logs" onclick="fetchLogs(true)" title="Refresh logs now">
           &#8635; Refresh
         </button>
       </div>
@@ -818,7 +825,7 @@
           <div class="terminal-title" id="terminal-stats-title">Showing 0 lines</div>
           <button type="button" class="terminal-clear-btn" onclick="clearTerminalView()" title="Clear view">Clear</button>
         </div>
-        <div id="log-console" class="max-h-[480px] overflow-y-auto font-mono text-xs bg-black/60 rounded-xl p-3 log-terminal-body" tabindex="0">
+        <div id="log-console-container" class="max-h-[480px] overflow-y-auto font-mono text-xs bg-black/60 rounded-xl p-3 log-terminal-body" tabindex="0">
           <div id="log-lines-output">
             <div class="log-placeholder">Loading system logs...</div>
           </div>
@@ -892,10 +899,8 @@
         history.replaceState(null, null, '#' + cleanId.replace(/^(tab|section)-/, ''));
       }
       if (cleanId === 'section-logs' || cleanId === 'tab-logs' || cleanId === 'logs') {
-        loadLogs();
+        fetchLogs();
         if (_isPolling) startPolling();
-      } else {
-        stopPolling();
       }
     }
 
@@ -1291,7 +1296,7 @@
       }
     }
 
-    // Live Log Inspector Functions
+    // Live Log Inspector Functions & Real-Time Polling
     let _cachedLogLines = [];
     let _pollInterval = null;
     let _isPolling = true;
@@ -1306,58 +1311,20 @@
         .replace(/'/g, '&#039;');
     }
 
-    function startPolling() {
-      if (_pollInterval) clearInterval(_pollInterval);
-      _pollInterval = setInterval(() => {
-        const logsTab = document.getElementById('section-logs') || document.getElementById('tab-logs');
-        if (logsTab && logsTab.classList.contains('active')) {
-          loadLogs(false);
-        }
-      }, 3000);
-      const dot = document.getElementById('logs-pulse-dot');
-      if (dot) dot.classList.remove('paused');
-      const btn = document.getElementById('btn-poll-toggle');
-      if (btn) btn.textContent = 'Pause Poll';
-    }
-
-    function stopPolling(userInitiated = false) {
-      if (_pollInterval) {
-        clearInterval(_pollInterval);
-        _pollInterval = null;
-      }
-      const dot = document.getElementById('logs-pulse-dot');
-      if (dot) dot.classList.add('paused');
-      const btn = document.getElementById('btn-poll-toggle');
-      if (btn && userInitiated) btn.textContent = 'Resume Poll';
-    }
-
-    function togglePolling() {
-      if (_isPolling) {
-        _isPolling = false;
-        stopPolling(true);
-      } else {
-        _isPolling = true;
-        startPolling();
-        loadLogs(true);
-      }
-    }
-
-    async function loadLogs(isManual = false) {
-      const level = document.getElementById('log-level-filter')?.value || 'ALL';
+    // 1. fetchLogs queries /api/v1/system/logs?lines=${lines}&level=${level}
+    async function fetchLogs(isManual = false) {
       const lines = document.getElementById('log-lines-filter')?.value || '100';
-      const consoleEl = document.getElementById('log-console');
-      const outputEl = document.getElementById('log-lines-output') || consoleEl;
-      const statsTitle = document.getElementById('terminal-stats-title');
+      const level = document.getElementById('log-level-filter')?.value || 'ALL';
+      const outputEl = document.getElementById('log-lines-output');
       const fileStatus = document.getElementById('log-file-status');
 
-      if (!consoleEl) return;
+      if (!outputEl) return;
       if (isManual) {
         showToast('Refreshing system logs...', 'info', 1500);
       }
 
       try {
-        const url = `/api/v1/system/logs?lines=${encodeURIComponent(lines)}&level=${encodeURIComponent(level)}`;
-        const res = await fetch(url);
+        const res = await fetch(`/api/v1/system/logs?lines=${encodeURIComponent(lines)}&level=${encodeURIComponent(level)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
@@ -1368,7 +1335,7 @@
             : `Log file not found at ${data.file_path} (will be created automatically on service activity)`;
         }
 
-        renderLogLines(_cachedLogLines);
+        renderLogs(_cachedLogLines);
       } catch (err) {
         if (outputEl) {
           outputEl.innerHTML = `<div class="log-placeholder" style="color:#ef4444">Error fetching logs: ${escapeHtml(err.message)}</div>`;
@@ -1376,9 +1343,12 @@
       }
     }
 
-    function renderLogLines(lines) {
-      const consoleEl = document.getElementById('log-console');
-      const outputEl = document.getElementById('log-lines-output') || consoleEl;
+    // 2. Render parsed entries inside #log-lines-output:
+    //    - Highlight WARNING in amber, ERROR in red, and lines mentioning "passed" or "PASSED" in green.
+    // 3. Automatically scroll #log-console-container to the bottom on new data.
+    function renderLogs(lines) {
+      const outputEl = document.getElementById('log-lines-output');
+      const consoleContainer = document.getElementById('log-console-container') || document.getElementById('log-console');
       const statsTitle = document.getElementById('terminal-stats-title');
       const searchTerm = document.getElementById('log-search-input')?.value.trim().toLowerCase() || '';
 
@@ -1399,35 +1369,104 @@
 
       let html = '';
       for (const line of filtered) {
-        const lvl = escapeHtml(line.level || 'INFO');
-        const ts = escapeHtml(line.timestamp || '');
-        const lgr = escapeHtml(line.logger || '');
-        const msg = escapeHtml(line.message || line.raw || '');
+        const raw = line.raw || line.message || '';
+        const msg = line.message || raw;
+        const ts = line.timestamp || '';
+        const lgr = line.logger || '';
+        const lvl = (line.level || 'INFO').toUpperCase();
 
-        html += `<div class="log-line level-${lvl}">`;
-        if (ts) html += `<span class="log-ts">${ts}</span>`;
-        html += `<span class="log-badge ${lvl}">${lvl}</span>`;
-        if (lgr) html += `<span class="log-logger">[${lgr}]:</span>`;
-        html += `<span class="log-msg">${msg}</span></div>`;
+        const isPassed = /\bpassed\b/i.test(msg) || /\bpassed\b/i.test(raw);
+
+        let levelClass = `level-${lvl}`;
+        let lineStyle = '';
+        let msgStyle = '';
+
+        if (lvl === 'ERROR') {
+          levelClass = 'level-ERROR';
+          lineStyle = 'color: #ef4444;';
+          msgStyle = 'color: #f87171;';
+        } else if (lvl === 'WARNING') {
+          levelClass = 'level-WARNING';
+          lineStyle = 'color: #f59e0b;';
+          msgStyle = 'color: #fbbf24;';
+        } else if (isPassed) {
+          levelClass = 'log-passed';
+          lineStyle = 'color: #10b981;';
+          msgStyle = 'color: #34d399; font-weight: 500;';
+        }
+
+        html += `<div class="log-line ${levelClass}" style="${lineStyle}">`;
+        if (ts) html += `<span class="log-ts">${escapeHtml(ts)}</span>`;
+        html += `<span class="log-badge ${escapeHtml(lvl)}">${escapeHtml(lvl)}</span>`;
+        if (lgr) html += `<span class="log-logger">[${escapeHtml(lgr)}]:</span>`;
+        html += `<span class="log-msg" style="${msgStyle}">${escapeHtml(msg)}</span></div>`;
       }
 
       outputEl.innerHTML = html;
-      if (consoleEl) {
-        consoleEl.scrollTop = consoleEl.scrollHeight;
+
+      // Automatically scroll #log-console-container to bottom on new data
+      if (consoleContainer) {
+        consoleContainer.scrollTop = consoleContainer.scrollHeight;
       }
     }
 
+    // 4. Set up an interval to poll every 3 seconds, with the "Pause Poll" button toggling the interval on/off.
+    function startPolling() {
+      if (_pollInterval) clearInterval(_pollInterval);
+      _pollInterval = setInterval(() => {
+        const logsTab = document.getElementById('section-logs') || document.getElementById('tab-logs');
+        if (!logsTab || logsTab.classList.contains('active')) {
+          fetchLogs();
+        }
+      }, 3000);
+      _isPolling = true;
+      const btn = document.getElementById('btn-poll-toggle');
+      if (btn) btn.textContent = 'Pause Poll';
+      const dot = document.getElementById('logs-pulse-dot');
+      if (dot) dot.classList.remove('paused');
+    }
+
+    function stopPolling() {
+      if (_pollInterval) {
+        clearInterval(_pollInterval);
+        _pollInterval = null;
+      }
+      _isPolling = false;
+      const btn = document.getElementById('btn-poll-toggle');
+      if (btn) btn.textContent = 'Resume Poll';
+      const dot = document.getElementById('logs-pulse-dot');
+      if (dot) dot.classList.add('paused');
+    }
+
+    function togglePolling() {
+      if (_isPolling) {
+        stopPolling();
+      } else {
+        startPolling();
+        fetchLogs();
+      }
+    }
+
+    // Compatibility aliases and filter helpers
+    const loadLogs = fetchLogs;
+    const renderLogLines = renderLogs;
+
     function filterLogsClientSide() {
-      renderLogLines(_cachedLogLines);
+      renderLogs(_cachedLogLines);
     }
 
     function clearTerminalView() {
-      const outputEl = document.getElementById('log-lines-output') || document.getElementById('log-console');
+      const outputEl = document.getElementById('log-lines-output') || document.getElementById('log-console-container');
       if (outputEl) {
         outputEl.innerHTML = '<div class="log-placeholder">Terminal view cleared. Click &#8635; Refresh to reload.</div>';
       }
       const statsTitle = document.getElementById('terminal-stats-title');
       if (statsTitle) statsTitle.textContent = 'Showing 0 lines';
     }
+
+    // Set up 3-second polling interval on DOMContentLoaded
+    document.addEventListener('DOMContentLoaded', () => {
+      startPolling();
+    });
   </script>
 {% endblock %}

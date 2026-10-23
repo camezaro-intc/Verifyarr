@@ -63,8 +63,11 @@ The most reliable tell is the **runtime delta**: the container duration compared
 
 **Operations & User Experience**
 
-- **Modern Web Dashboard** at `/`: real-time view of recent verifications with timestamp, title, release name, probed vs. expected runtime, check breakdown, and failure reasons.
-- **Arr-Style Settings UI** at `/settings`: configure verification engine, analysis tiers, Servarr connections, qBittorrent download client, notifications, and path mappings with live in-memory hot reloading.
+- **Modern Web Dashboard** at `/`: real-time view of recent verifications with timestamp, title, release name, probed vs. expected runtime, check breakdown, failure reasons, and responsive card views on mobile.
+- **Correlated Pipeline Trace (LOGS ALL)**: Unified multi-service diagnostic terminal correlating logs across Verifyarr, qBittorrent, Sonarr/Radarr, and Jellyfin within a ±45 minute temporal window. Features token/hash matching, timezone normalization, instant source filtering (`Verifyarr`, `qBittorrent`, `Sonarr/Radarr`, `Jellyfin`), one-click clipboard export, and iOS-optimized touch scrolling.
+- **In-App Self-Updater & Update Alerts**: Non-intrusive alert banner on the dashboard when a new release is available, plus an Updates manager in Settings with changelog inspection, background binary staging, and automated health polling with reconnection.
+- **Arr-Style Settings UI** at `/settings`: configure verification engine, analysis tiers, Servarr connections, qBittorrent download client, notifications, software updates, and path mappings with live in-memory hot reloading.
+- **Mobile-Optimized Responsive Experience**: Dedicated mobile cards, compact floating windows on desktop, horizontal chip navigation bars, and touch gestures built for phone and tablet browsers.
 - **Tiered Binary Resolution & Locked File Browser**: Auto-detects `ffprobe`, `ffmpeg`, and `tesseract` across system `PATH` and common vendor directories (Jellyfin Server, Chocolatey, Program Files, Linux `/usr`), supports manual overrides, and provides a restricted server-side filesystem navigator.
 - **Connection Testers**: real-time API status validation for Radarr, Sonarr, Jellyfin, and qBittorrent with password masking toggles.
 - **Force Approve**: one-click whitelist for false positives such as director's cuts and extended editions. It also triggers a Jellyfin refresh.
@@ -189,6 +192,7 @@ Verifyarr includes an Arr-style web settings interface at <http://localhost:7979
 - **Integrations**: Configure Radarr, Sonarr, and Jellyfin connections with inline "Test Connection" validation buttons and show/hide API key toggles.
 - **Notifications**: Discord webhook integration for instant failure and error notifications.
 - **System & Binaries**: Customize `ffprobe`, `ffmpeg`, and `tesseract` paths, and manage path mappings (`From` -> `To`) dynamically.
+- **Software Updates**: Check for newer releases directly against GitHub, view detailed Markdown changelogs, and perform 1-click self-updates with automated service recycling and health reconnection.
 - **Hot Reloading**: Changes submitted via "Save Changes" are persisted atomically to `config.yaml` and hot-reloaded into memory immediately without restarting the service.
 
 ---
@@ -298,6 +302,9 @@ Settings can be edited via the [Web UI](#web-settings-management) or in `config.
 | `GET` | `/api/v1/settings/browse-fs` | Server-side filesystem navigator restricted to specific binaries |
 | `POST` | `/api/v1/webhook` | Servarr webhook ingestion endpoint |
 | `POST` | `/api/v1/whitelist/{item_id}` | Force-approve a rejected release and refresh Jellyfin |
+| `GET` | `/api/v1/history/{item_id}/correlated-logs` | Fetch correlated pipeline trace logs across Verifyarr, qBittorrent, Servarr, and Jellyfin |
+| `GET` | `/api/v1/system/update/check` | Check GitHub Releases API for newer versions and changelogs |
+| `POST` | `/api/v1/system/update/apply` | Download latest release, stage files, and trigger background self-update |
 | `GET` | `/health` | Application health and mode status probe |
 
 ---

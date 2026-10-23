@@ -155,7 +155,7 @@ class UpdateManager:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(staging_dir)
 
-        # 4. Write C:\Verifyarr\temp\updater.ps1
+        # 4. Write C:\Verifyarr\temp\updater.ps1 with atomic renaming and robocopy
         ps_content = f"""# Verifyarr Updater Script
 $ErrorActionPreference = 'Continue'
 $target = "{target_dir}"
@@ -164,18 +164,11 @@ if (-not (Test-Path $logsDir)) {{
     New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
 }}
 $logFile = Join-Path $logsDir "updater.log"
+try {{
+    Start-Transcript -Path $logFile -Append -ErrorAction SilentlyContinue
+}} catch {{}}
 
-Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting update..." |
-    Out-File -FilePath $logFile -Append -Encoding utf8
-
-$nssm = Join-Path $target "nssm.exe"
-if (Test-Path $nssm) {{
-    & $nssm stop Verifyarr 2>&1 | Out-Null
-}}
-Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
-Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Milliseconds 600
+Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting update..."
 
 $staging = "{staging_dir}"
 $items = Get-ChildItem -Path $staging
@@ -183,7 +176,25 @@ if ($items.Count -eq 1 -and $items[0].PSIsContainer) {{
     $staging = $items[0].FullName
 }}
 
-# Pre-rename verifyarr.exe if present so it is never locked by Windows NTFS
+# 1. Stop service and terminate processes with verification loop
+$nssm = Join-Path $target "nssm.exe"
+if (Test-Path $nssm) {{
+    & $nssm stop Verifyarr 2>&1 | Out-Null
+}}
+Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
+Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+
+# Wait up to 5 seconds for verifyarr processes to release file handles
+$maxWait = 10
+while ((Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue) -and ($maxWait -gt 0)) {{
+    Start-Sleep -Milliseconds 500
+    Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    $maxWait--
+}}
+
+# 2. Pre-rename verifyarr.exe and any destination dll/pyd files so paths are vacant
 $targetExe = Join-Path $target "verifyarr.exe"
 $oldExe = Join-Path $target "verifyarr.exe.old"
 if (Test-Path $targetExe) {{
@@ -191,39 +202,65 @@ if (Test-Path $targetExe) {{
     Rename-Item -Path $targetExe -NewName "verifyarr.exe.old" -Force -ErrorAction SilentlyContinue
 }}
 
-$excluded = @("data", "config.yaml", ".env", "logs", "temp")
-Get-ChildItem -Path $staging | ForEach-Object {{
-    if ($excluded -notcontains $_.Name) {{
-        $destPath = Join-Path $target $_.Name
-        try {{
-            Copy-Item -Path $_.FullName -Destination $target -Recurse -Force -ErrorAction Stop
-        }} catch {{
-            $oldPath = $destPath + ".old"
-            Remove-Item -Path $oldPath -Recurse -Force -ErrorAction SilentlyContinue
-            Rename-Item -Path $destPath -NewName ($_.Name + ".old") `
-                -Force -ErrorAction SilentlyContinue
-            Copy-Item -Path $_.FullName -Destination $target -Recurse -Force -ErrorAction Continue
+if (Test-Path "$staging\\_internal") {{
+    Get-ChildItem -Path "$staging\\_internal" -Recurse |
+        Where-Object {{ -not $_.PSIsContainer }} | ForEach-Object {{
+            $rel = $_.FullName.Substring($staging.Length + 1)
+            $dest = Join-Path $target $rel
+            if (Test-Path $dest) {{
+                $destOld = $dest + ".old"
+                Remove-Item $destOld -Force -ErrorAction SilentlyContinue
+                Rename-Item -Path $dest -NewName ($_.Name + ".old") `
+                    -Force -ErrorAction SilentlyContinue
+            }}
+        }}
+}}
+
+# 3. Copy new files using robocopy with retries, excluding configs and service wrapper
+$robocopyArgs = @(
+    $staging, $target, "/E", "/R:5", "/W:1",
+    "/XF", "nssm.exe", "config.yaml", ".env",
+    "/XD", "data", "logs", "temp", ".git"
+)
+& robocopy @robocopyArgs 2>&1 | Out-Null
+if ($LASTEXITCODE -ge 8) {{
+    Get-ChildItem -Path $staging | ForEach-Object {{
+        if (@("data", "config.yaml", ".env", "logs", "temp", "nssm.exe") -notcontains $_.Name) {{
+            Copy-Item -Path $_.FullName -Destination $target -Recurse -Force `
+                -ErrorAction Continue
         }}
     }}
 }}
 
+# 4. Clean up .old files that were successfully freed
+Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
+Get-ChildItem -Path $target -Filter "*.old" -Recurse -Force -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+# 5. Restart service
 if (Test-Path $nssm) {{
     & $nssm start Verifyarr 2>&1 | Out-Null
 }}
 Start-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
 
+# 6. Clean up staging & archive
 Remove-Item -Path "$staging" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "{zip_path}" -Force -ErrorAction SilentlyContinue
-Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
 
-Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Update finished." |
-    Out-File -FilePath $logFile -Append -Encoding utf8
+Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Update finished."
+try {{
+    Stop-Transcript -ErrorAction SilentlyContinue
+}} catch {{}}
 """
         with open(updater_script, "w", encoding="utf-8") as f:
             f.write(ps_content)
 
-        # 5. Spawn updater.ps1 with DETACHED_PROCESS (creationflags=0x00000008)
-        creationflags = 0x00000008 if os.name == "nt" else 0
+        # 5. Spawn updater.ps1 with DETACHED_PROCESS and CREATE_BREAKAWAY_FROM_JOB
+        creationflags = (
+            subprocess.CREATE_BREAKAWAY_FROM_JOB
+            | subprocess.CREATE_NEW_PROCESS_GROUP
+            | subprocess.DETACHED_PROCESS
+        ) if os.name == "nt" else 0
         ps_cmd = [
             "powershell.exe",
             "-NoProfile",

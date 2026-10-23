@@ -164,7 +164,8 @@ def test_apply_update_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         assert mock_popen.called
         cmd_args, kwargs = mock_popen.call_args
         if os.name == "nt":
-            assert kwargs.get("creationflags") == 0x00000008
+            flags = kwargs.get("creationflags", 0)
+            assert bool(flags & 0x00000008)
 
 
 def test_system_update_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

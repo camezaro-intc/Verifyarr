@@ -164,32 +164,18 @@ if (-not (Test-Path $logsDir)) {{
     New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
 }}
 $logFile = Join-Path $logsDir "updater.log"
-try {{
-    Start-Transcript -Path $logFile -Append -ErrorAction SilentlyContinue
-}} catch {{}}
 
-Write-Host "============================================="
-Write-Host "[Verifyarr Updater] Starting update at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-Write-Host "[Verifyarr Updater] Target directory: $target"
-Write-Host "[Verifyarr Updater] Staging directory: {staging_dir}"
-Write-Host "============================================="
-
-Write-Host "[Verifyarr Updater] Waiting 3 seconds for initial process release..."
-Start-Sleep -Seconds 3
+Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting update..." |
+    Out-File -FilePath $logFile -Append -Encoding utf8
 
 $nssm = Join-Path $target "nssm.exe"
 if (Test-Path $nssm) {{
-    Write-Host "[Verifyarr Updater] Stopping service via $nssm..."
     & $nssm stop Verifyarr 2>&1 | Out-Null
 }}
-
-Write-Host "[Verifyarr Updater] Stopping service via Stop-Service..."
 Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
-
-Write-Host "[Verifyarr Updater] Ensuring all verifyarr processes are terminated..."
 Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue |
     Stop-Process -Force -ErrorAction SilentlyContinue
-Start-Sleep -Seconds 2
+Start-Sleep -Milliseconds 600
 
 $staging = "{staging_dir}"
 $items = Get-ChildItem -Path $staging
@@ -197,30 +183,41 @@ if ($items.Count -eq 1 -and $items[0].PSIsContainer) {{
     $staging = $items[0].FullName
 }}
 
+# Pre-rename verifyarr.exe if present so it is never locked by Windows NTFS
+$targetExe = Join-Path $target "verifyarr.exe"
+$oldExe = Join-Path $target "verifyarr.exe.old"
+if (Test-Path $targetExe) {{
+    Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
+    Rename-Item -Path $targetExe -NewName "verifyarr.exe.old" -Force -ErrorAction SilentlyContinue
+}}
+
 $excluded = @("data", "config.yaml", ".env", "logs", "temp")
-Write-Host "[Verifyarr Updater] Copying updated files from $staging to $target..."
 Get-ChildItem -Path $staging | ForEach-Object {{
     if ($excluded -notcontains $_.Name) {{
-        Write-Host "  -> Updating $($_.Name)..."
-        Copy-Item -Path $_.FullName -Destination $target -Recurse -Force -ErrorAction Continue
+        $destPath = Join-Path $target $_.Name
+        try {{
+            Copy-Item -Path $_.FullName -Destination $target -Recurse -Force -ErrorAction Stop
+        }} catch {{
+            $oldPath = $destPath + ".old"
+            Remove-Item -Path $oldPath -Recurse -Force -ErrorAction SilentlyContinue
+            Rename-Item -Path $destPath -NewName ($_.Name + ".old") `
+                -Force -ErrorAction SilentlyContinue
+            Copy-Item -Path $_.FullName -Destination $target -Recurse -Force -ErrorAction Continue
+        }}
     }}
 }}
 
-Write-Host "[Verifyarr Updater] Restarting Verifyarr service..."
 if (Test-Path $nssm) {{
     & $nssm start Verifyarr 2>&1 | Out-Null
 }}
 Start-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
 
-Write-Host "[Verifyarr Updater] Cleaning up temporary staging files..."
-Start-Sleep -Seconds 2
 Remove-Item -Path "$staging" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "{zip_path}" -Force -ErrorAction SilentlyContinue
+Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
 
-Write-Host "[Verifyarr Updater] Update finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-try {{
-    Stop-Transcript -ErrorAction SilentlyContinue
-}} catch {{}}
+Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Update finished." |
+    Out-File -FilePath $logFile -Append -Encoding utf8
 """
         with open(updater_script, "w", encoding="utf-8") as f:
             f.write(ps_content)

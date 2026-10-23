@@ -257,3 +257,12 @@ def test_api_correlated_logs_endpoint(tmp_path: Path, monkeypatch: pytest.Monkey
         assert len(data["events"]) >= 1
         assert data["events"][0]["app"] == "Verifyarr"
         assert data["events"][0]["level"] == "INFO"
+
+        # Test dashboard HTML renders LOGS ALL button and trace modal
+        dash_resp = client.get("/")
+        assert dash_resp.status_code == 200
+        dash_html = dash_resp.text
+        assert f"openCorrelatedLogs({saved.id})" in dash_html
+        assert "LOGS ALL" in dash_html
+        assert 'id="trace-modal"' in dash_html
+        assert 'id="trace-terminal-output"' in dash_html

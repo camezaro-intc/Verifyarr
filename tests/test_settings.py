@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import httpx
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 
 from src.config import AppConfig, Settings, save_config, save_config_atomic
 from src.main import create_app
+from src.models.history import CheckResult, HistoryEntry, HistoryStore, VerificationStatus
 
 
 def _make_test_settings(tmp_path: Path) -> Settings:
@@ -432,3 +434,88 @@ def test_qbittorrent_settings_persistence_and_reload(
         assert app.state.settings.qbittorrent.enabled is True
         assert app.state.settings.qbittorrent.url == "http://127.0.0.1:8080"
         assert app.state.pre_download_checker._settings.qbittorrent.enabled is True
+
+
+def test_dashboard_responsive_layout_and_filter_chips(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "test_dash.db")
+    settings = _make_test_settings(tmp_path)
+    settings.storage.database_path = db_path
+
+    # Pre-seed history entries into sqlite before app launch
+    store = HistoryStore(db_path)
+    asyncio.run(store.open())
+    asyncio.run(
+        store.add(
+            HistoryEntry(
+                app="sonarr",
+                title="Clean Show",
+                release_name="Clean.Show.S01E01.mkv",
+                status=VerificationStatus.PASSED,
+                expected_runtime_min=45,
+                probed_runtime_min=44.8,
+                checks=[CheckResult(tier=1, name="Runtime delta", passed=True, detail="OK")],
+            )
+        )
+    )
+    asyncio.run(
+        store.add(
+            HistoryEntry(
+                app="radarr",
+                title="Mockbuster Movie",
+                release_name="Mockbuster.Movie.2024.mkv",
+                status=VerificationStatus.REJECTED,
+                failure_reasons=["Runtime delta 45m exceeds 15m threshold"],
+                checks=[CheckResult(tier=1, name="Runtime delta", passed=False, detail="Bad")],
+                remediation=["Deleted movie file", "Blocklisted release"],
+            )
+        )
+    )
+    asyncio.run(
+        store.add(
+            HistoryEntry(
+                app="sonarr",
+                title="Fake Show",
+                release_name="Fake.Show.S02E01.zip",
+                status=VerificationStatus.REJECTED_PRE_DOWNLOAD,
+                failure_reasons=["Malicious archive extension (.zip) detected"],
+                checks=[
+                    CheckResult(tier=0, name="Pre-Download", passed=False, detail="Blocked .zip")
+                ],
+                remediation=["Purged from qBit", "Removed queue item and blocklisted"],
+            )
+        )
+    )
+    asyncio.run(store.close())
+
+    app = create_app(settings)
+    with TestClient(app) as client:
+        resp = client.get("/")
+        assert resp.status_code == 200
+        html = resp.text
+
+        # 1. KPI stat cards and highlight classes
+        assert "highlight-amber" in html
+        assert "highlight-red" in html
+        assert "grid-cols-2" in html
+        assert "md:flex" in html
+
+        # 2. Desktop table vs Mobile card feed
+        assert 'class="hidden md:table"' in html
+        assert "mobile-feed block md:hidden space-y-3" in html
+        assert "feed-card bg-slate-800/80" in html
+        assert "Clean.Show.S01E01.mkv" in html
+        assert "Mockbuster.Movie.2024.mkv" in html
+        assert "Fake.Show.S02E01.zip" in html
+
+        # 3. Badges
+        assert "PRE-PURGED" in html
+        assert "REJECTED" in html
+        assert "PASSED" in html
+
+        # 4. Filter chips
+        assert "filter-chips" in html
+        assert "filter-chip active" in html
+        assert "filterEntries('ALL'" in html
+        assert "filterEntries('REJECTED_PRE_DOWNLOAD'" in html
+        assert "filterEntries('REJECTED'" in html
+        assert "filterEntries('PASSED'" in html

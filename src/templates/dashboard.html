@@ -1,11 +1,88 @@
 {% extends "base.html" %}
 {% block title %}Verifyarr — Dashboard{% endblock %}
 {% block extra_css %}
-    .stats { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
-    .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; min-width: 110px; }
+    /* Stat cards */
+    .stats {
+      margin-bottom: 20px;
+    }
+    .stat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      min-width: 110px;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
     .stat b { display: block; font-size: 22px; }
     .stat span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
-    .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; color: var(--muted); }
+    .stat.highlight-amber {
+      border-color: var(--amber) !important;
+      box-shadow: 0 0 12px rgba(243, 156, 18, 0.22);
+    }
+    .stat.highlight-red {
+      border-color: var(--red) !important;
+      box-shadow: 0 0 12px rgba(231, 76, 60, 0.22);
+    }
+
+    /* Toolbar and filter chips */
+    .toolbar {
+      margin-bottom: 14px;
+    }
+    .toolbar-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .filter-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all .15s ease;
+      user-select: none;
+    }
+    .filter-chip:hover {
+      color: var(--text);
+      background: var(--panel-2);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+    .filter-chip.active {
+      color: #fff;
+      background: rgba(106, 169, 255, 0.18);
+      border-color: var(--accent);
+      box-shadow: 0 0 8px rgba(106, 169, 255, 0.25);
+    }
+    .filter-chip .count {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--muted);
+    }
+    .filter-chip.active .count {
+      background: rgba(106, 169, 255, 0.35);
+      color: #fff;
+    }
+
+    /* Desktop data table */
     .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); }
@@ -19,7 +96,7 @@
              letter-spacing: .5px; border: 1px solid; }
     .badge.PASSED { color: var(--green); border-color: var(--green); background: rgba(46,204,113,.12); }
     .badge.REJECTED { color: var(--red); border-color: var(--red); background: rgba(231,76,60,.12); }
-    .badge.REJECTED_PRE_DOWNLOAD { color: #e74c3c; border-color: #e74c3c; background: rgba(231,76,60,.12); }
+    .badge.REJECTED_PRE_DOWNLOAD, .badge.PRE-PURGED { color: var(--amber); border-color: var(--amber); background: rgba(243,156,18,.12); }
     .badge.DRY_RUN { color: var(--amber); border-color: var(--amber); background: rgba(243,156,18,.12); }
     .badge.ERROR { color: var(--grey); border-color: var(--grey); background: rgba(127,140,141,.12); }
     .chip { display: inline-block; margin-left: 6px; font-size: 11px; color: var(--accent); }
@@ -31,25 +108,191 @@
     details ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; }
     .ok { color: var(--green); } .fail { color: var(--red); } .skip { color: var(--grey); }
     .empty { padding: 40px; text-align: center; color: var(--muted); }
+
+    /* Mobile Card Feed */
+    .mobile-feed {
+      display: none;
+    }
+    .feed-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: all .15s ease;
+    }
+    .feed-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .feed-card-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.35;
+      margin: 0;
+    }
+    .feed-card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .app-tag {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      text-transform: capitalize;
+    }
+    .release-box {
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+      font-size: 11px;
+      color: var(--muted);
+      word-break: break-all;
+      background: rgba(15, 17, 21, 0.6);
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(42, 47, 58, 0.6);
+      margin: 8px 0;
+    }
+    .failure-callout {
+      background: rgba(231, 76, 60, 0.08);
+      border: 1px solid rgba(231, 76, 60, 0.25);
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: #f1a9a0;
+      line-height: 1.4;
+    }
+    .details-body {
+      padding-top: 6px;
+      padding-left: 10px;
+      border-left: 2px solid var(--border);
+      margin-top: 4px;
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .card-actions {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    /* Responsive Breakpoints */
+    @media (max-width: 767px) {
+      .stats {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 12px !important;
+        margin-bottom: 16px !important;
+      }
+      .stat.featured-span-2 {
+        grid-column: span 2 !important;
+      }
+      .table-wrap {
+        display: none !important;
+      }
+      .mobile-feed {
+        display: flex !important;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .hidden.md\:table {
+        display: none !important;
+      }
+      .block.md\:hidden {
+        display: block !important;
+      }
+    }
+    @media (min-width: 768px) {
+      .stats {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        gap: 12px !important;
+        margin-bottom: 20px !important;
+      }
+      .stat {
+        flex: 1 1 0;
+        min-width: 110px;
+      }
+      .table-wrap {
+        display: block !important;
+      }
+      .mobile-feed {
+        display: none !important;
+      }
+      .hidden.md\:table {
+        display: table !important;
+      }
+      .block.md\:hidden {
+        display: none !important;
+      }
+    }
 {% endblock %}
 
 {% block content %}
-    <section class="stats">
+    <!-- 1. Metric KPI Stat Cards -->
+    <section class="stats grid grid-cols-2 gap-3 md:flex md:flex-wrap">
       <div class="stat"><b>{{ counts.PASSED }}</b><span>Passed</span></div>
-      <div class="stat"><b>{{ counts.REJECTED }}</b><span>Rejected</span></div>
-      <div class="stat"><b>{{ counts.REJECTED_PRE_DOWNLOAD }}</b><span>Pre-Purged</span></div>
+      <div class="stat {{ 'highlight-red' if counts.REJECTED > 0 else '' }}">
+        <b>{{ counts.REJECTED }}</b><span>Rejected</span>
+      </div>
+      <div class="stat {{ 'highlight-amber' if counts.REJECTED_PRE_DOWNLOAD > 0 else '' }}">
+        <b>{{ counts.REJECTED_PRE_DOWNLOAD }}</b><span>Pre-Purged</span>
+      </div>
       <div class="stat"><b>{{ counts.DRY_RUN }}</b><span>Dry run</span></div>
-      <div class="stat"><b>{{ counts.ERROR }}</b><span>Errors</span></div>
+      <div class="stat featured-span-2"><b>{{ counts.ERROR }}</b><span>Errors</span></div>
     </section>
 
+    <!-- 2. Toolbar & Filter Chips -->
     <div class="toolbar">
-      <span>Last {{ limit }} verifications</span>
-      <button type="button" onclick="location.reload()">Refresh</button>
+      <div class="toolbar-top">
+        <span>Last {{ limit }} verifications</span>
+        <button type="button" onclick="location.reload()" title="Refresh Dashboard">⟳ Refresh</button>
+      </div>
+      <div class="filter-chips" role="toolbar" aria-label="Filter Verifications">
+        <button type="button" class="filter-chip active" onclick="filterEntries('ALL', this)">
+          All <span class="count">{{ entries|length }}</span>
+        </button>
+        <button type="button" class="filter-chip" onclick="filterEntries('REJECTED_PRE_DOWNLOAD', this)">
+          Pre-Purged <span class="count">{{ counts.REJECTED_PRE_DOWNLOAD }}</span>
+        </button>
+        <button type="button" class="filter-chip" onclick="filterEntries('REJECTED', this)">
+          Rejected <span class="count">{{ counts.REJECTED }}</span>
+        </button>
+        <button type="button" class="filter-chip" onclick="filterEntries('PASSED', this)">
+          Passed <span class="count">{{ counts.PASSED }}</span>
+        </button>
+        {% if counts.DRY_RUN > 0 %}
+        <button type="button" class="filter-chip" onclick="filterEntries('DRY_RUN', this)">
+          Dry Run <span class="count">{{ counts.DRY_RUN }}</span>
+        </button>
+        {% endif %}
+        {% if counts.ERROR > 0 %}
+        <button type="button" class="filter-chip" onclick="filterEntries('ERROR', this)">
+          Errors <span class="count">{{ counts.ERROR }}</span>
+        </button>
+        {% endif %}
+      </div>
     </div>
 
+    <!-- 3. Desktop Table (hidden md:table) -->
     <div class="table-wrap">
       {% if entries %}
-      <table>
+      <table class="hidden md:table">
         <thead>
           <tr>
             <th>Timestamp</th><th>Title</th><th>Release Name</th>
@@ -59,7 +302,7 @@
         <tbody>
         {% for e in entries %}
           {% set runtime_bad = e.failure_reasons and e.checks and e.checks[0].tier == 1 and not e.checks[0].passed %}
-          <tr id="row-{{ e.id }}">
+          <tr id="row-{{ e.id }}" data-status="{{ e.status.value }}">
             <td class="nowrap muted">{{ e.timestamp_display }}</td>
             <td><strong>{{ e.title }}</strong><br><span class="muted">{{ e.app }}</span></td>
             <td class="mono">{{ e.release_name }}</td>
@@ -69,7 +312,9 @@
               {% if e.expected_runtime_min %}{{ '%.0f'|format(e.expected_runtime_min) }}{% else %}&ndash;{% endif %} min
             </td>
             <td class="nowrap">
-              <span class="badge {{ e.status.value }}">{{ e.status.value }}</span>
+              <span class="badge {{ e.status.value }}">
+                {% if e.status.value == 'REJECTED_PRE_DOWNLOAD' %}PRE-PURGED{% elif e.status.value == 'DRY_RUN' %}DRY RUN{% else %}{{ e.status.value }}{% endif %}
+              </span>
               {% if e.whitelisted %}<span class="chip" title="Force-approved by user">&#10003; whitelisted</span>{% endif %}
             </td>
             <td>
@@ -78,7 +323,7 @@
               {% endif %}
               {% if e.checks or e.remediation %}
               <details>
-                <summary>Checks &amp; actions</summary>
+                <summary>Checks &amp; actions ({{ e.checks|selectattr("passed")|list|length }} passed)</summary>
                 <ul>
                   {% for c in e.checks %}
                   <li class="{{ 'skip' if c.skipped else ('ok' if c.passed else 'fail') }}">
@@ -100,14 +345,138 @@
         {% endfor %}
         </tbody>
       </table>
-      {% else %}
-      <div class="empty">No verifications yet. Point a Radarr/Sonarr webhook (On Import / On Upgrade) at <code>/api/v1/webhook</code>.</div>
       {% endif %}
     </div>
+
+    <!-- 4. Mobile Card Feed (block md:hidden) -->
+    {% if entries %}
+    <div class="mobile-feed block md:hidden space-y-3">
+      {% for item in entries %}
+      {% set is_purged = item.status.value == 'REJECTED_PRE_DOWNLOAD' %}
+      <div class="feed-card bg-slate-800/80 border border-slate-700/60 rounded-xl p-4 shadow-sm"
+           data-status="{{ item.status.value }}" id="card-{{ item.id }}">
+        <div class="flex items-start justify-between gap-2 mb-2 feed-card-header">
+          <div style="flex: 1; min-width: 0;">
+            <h3 class="font-semibold text-slate-100 text-sm leading-snug feed-card-title">
+              {{ item.title or item.release_name }}
+            </h3>
+            <div class="flex items-center gap-2 text-xs text-slate-400 mt-1 feed-card-meta">
+              <span class="capitalize px-1.5 py-0.5 rounded bg-slate-700/50 text-slate-300 app-tag">{{ item.app }}</span>
+              <span class="muted">{{ item.timestamp_display }}</span>
+              {% if item.probed_runtime_min is not none %}
+                <span>• {{ '%.1f'|format(item.probed_runtime_min) }} / {{ '%.0f'|format(item.expected_runtime_min) if item.expected_runtime_min else '--' }} min</span>
+              {% endif %}
+            </div>
+          </div>
+          <!-- Status Badge -->
+          <span class="shrink-0 px-2.5 py-1 text-xs font-semibold rounded-full badge {{ item.status.value }}
+            {% if item.status.value == 'PASSED' %} bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
+            {% elif is_purged %} bg-amber-500/10 text-amber-400 border border-amber-500/20
+            {% elif item.status.value == 'DRY_RUN' %} bg-amber-500/10 text-amber-400 border border-amber-500/20
+            {% else %} bg-rose-500/10 text-rose-400 border border-rose-500/20 {% endif %}">
+            {% if is_purged %}PRE-PURGED{% elif item.status.value == 'DRY_RUN' %}DRY RUN{% else %}{{ item.status.value }}{% endif %}
+          </span>
+        </div>
+
+        <!-- Release Name -->
+        <p class="font-mono text-xs text-slate-400 break-all bg-slate-900/40 p-2 rounded border border-slate-800 mb-2 release-box">
+          {{ item.release_name }}
+        </p>
+
+        {% if item.whitelisted %}
+        <div style="margin-bottom: 8px;">
+          <span class="chip" title="Force-approved by user">&#10003; whitelisted</span>
+        </div>
+        {% endif %}
+
+        <!-- Key reason callout if failed -->
+        {% if item.failure_reasons %}
+        <div class="failure-callout">
+          {% for r in item.failure_reasons %}
+          <div>⚠️ {{ r }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Expandable Details -->
+        {% if item.checks or item.remediation %}
+        {% set passed_count = item.checks|selectattr("passed")|list|length %}
+        <details class="text-xs text-slate-300 mt-2">
+          <summary class="cursor-pointer text-slate-400 hover:text-slate-200 select-none py-1">
+            ▾ Inspection Details ({{ passed_count }} passed)
+          </summary>
+          <div class="pt-2 pl-2 border-l-2 border-slate-700 mt-1 space-y-1 text-slate-400 details-body">
+            {% for c in item.checks %}
+            <div class="{{ 'skip' if c.skipped else ('ok' if c.passed else 'fail') }}">
+              T{{ c.tier }} {{ c.name }}: {{ c.detail }}{% if c.skipped %} (skipped){% endif %}
+            </div>
+            {% endfor %}
+            {% for a in item.remediation %}
+            <div class="muted">&rarr; {{ a }}</div>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+
+        <!-- Force Approve button for Mobile -->
+        {% if item.can_force_approve %}
+        <div class="card-actions">
+          <button type="button" onclick="forceApprove({{ item.id }}, this)"
+                  title="Whitelist this release (e.g. director's cut / extended edition)">Force Approve</button>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Filter Empty State -->
+    <div id="empty-filter-message" class="empty" style="display: none;">
+      No verifications match the selected filter.
+    </div>
+
+    <!-- General Empty State -->
+    {% if not entries %}
+    <div class="empty">
+      No verifications yet. Point a Radarr/Sonarr webhook (On Grab / On Import / On Upgrade) at <code>/api/v1/webhook</code>.
+    </div>
+    {% endif %}
 {% endblock %}
 
 {% block scripts %}
   <script>
+    let currentFilter = 'ALL';
+
+    function filterEntries(status, btn) {
+      currentFilter = status;
+
+      // Update active chip UI
+      document.querySelectorAll('.filter-chip').forEach(el => el.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+
+      let visibleCount = 0;
+
+      // Filter desktop table rows
+      document.querySelectorAll('tbody tr[data-status]').forEach(row => {
+        const rowStatus = row.getAttribute('data-status');
+        const matches = (status === 'ALL' || rowStatus === status);
+        row.style.display = matches ? '' : 'none';
+        if (matches) visibleCount++;
+      });
+
+      // Filter mobile cards
+      document.querySelectorAll('.feed-card[data-status]').forEach(card => {
+        const cardStatus = card.getAttribute('data-status');
+        const matches = (status === 'ALL' || cardStatus === status);
+        card.style.display = matches ? '' : 'none';
+      });
+
+      const emptyFilterMsg = document.getElementById('empty-filter-message');
+      if (emptyFilterMsg) {
+        emptyFilterMsg.style.display = visibleCount === 0 ? 'block' : 'none';
+      }
+    }
+
     async function forceApprove(id, button) {
       if (!confirm('Whitelist this release and treat it as a false positive?')) return;
       button.disabled = true;

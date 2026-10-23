@@ -234,6 +234,7 @@ async def test_pre_download_inspector_passes_legitimate_video(
     qbit_client.delete_torrent = AsyncMock()
 
     remediator = MagicMock(spec=Remediator)
+    remediator.remove_from_queue_and_blocklist = AsyncMock()
     remediator.blocklist_release = AsyncMock()
     notifier = MagicMock(spec=Notifier)
 
@@ -262,6 +263,7 @@ async def test_pre_download_inspector_passes_legitimate_video(
 
     # Confirm legitimate file is NOT deleted and NOT blocklisted
     qbit_client.delete_torrent.assert_not_awaited()
+    remediator.remove_from_queue_and_blocklist.assert_not_awaited()
     remediator.blocklist_release.assert_not_awaited()
 
     entries = await history.recent(limit=10)
@@ -287,6 +289,7 @@ async def test_pre_download_inspector_purges_zero_video_container_torrent(
     qbit_client.delete_torrent = AsyncMock(return_value=True)
 
     remediator = MagicMock(spec=Remediator)
+    remediator.remove_from_queue_and_blocklist = AsyncMock(return_value="Blocklisted")
     remediator.blocklist_release = AsyncMock(return_value="Blocklisted")
     remediator.trigger_search = AsyncMock(return_value="Triggered")
     notifier = MagicMock(spec=Notifier)
@@ -312,7 +315,7 @@ async def test_pre_download_inspector_purges_zero_video_container_torrent(
     assert result is True
 
     qbit_client.delete_torrent.assert_awaited_once_with("hash_no_video", delete_files=True)
-    remediator.blocklist_release.assert_awaited_once()
+    remediator.remove_from_queue_and_blocklist.assert_awaited_once()
 
     entries = await history.recent(limit=10)
     assert len(entries) == 1
@@ -426,3 +429,155 @@ def test_simulate_event_grab_bad_file_payload() -> None:
     assert payload["downloadClient"] == "qBittorrent"
     assert payload["release"]["releaseTitle"].endswith(".7z")
     assert payload["downloadId"] == "4a76a8d6778f691d1e4e7195c64ef51381283626"
+
+
+@pytest.mark.anyio
+async def test_pre_download_inspector_queue_blocklist_workflow(
+    test_settings: Settings, tmp_path: Any
+) -> None:
+    torrent_hash = "5b87b9e7889f702e2f5f8206d75ff62492394737"
+    release_title = "Show.Title.S02E05.720p.HDTV.x264.zip"
+
+    history = HistoryStore(str(tmp_path / "history.db"))
+    await history.open()
+
+    qbit_client = MagicMock(spec=QBittorrentClient)
+    qbit_client.get_torrent_files = AsyncMock(
+        return_value=[
+            {"name": "malicious.zip", "size": 100000000},
+        ]
+    )
+    qbit_client.delete_torrent = AsyncMock(return_value=True)
+
+    queue_delete_invoked = []
+    blocklist_post_invoked = []
+    search_invoked = []
+
+    def sonarr_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v3/queue" and request.method == "GET":
+            assert request.url.params.get("includeUnknownSeriesItems") == "true"
+            return httpx.Response(
+                200,
+                json={
+                    "records": [
+                        {
+                            "id": 77,
+                            "downloadId": torrent_hash.upper(),
+                            "title": release_title,
+                        }
+                    ]
+                },
+            )
+        if path == "/api/v3/queue/77" and request.method == "DELETE":
+            queue_delete_invoked.append((str(request.url), dict(request.url.params)))
+            return httpx.Response(200, json={})
+        if path == "/api/v3/blocklist" and request.method == "POST":
+            blocklist_post_invoked.append(str(request.url))
+            return httpx.Response(405)
+        if path == "/api/v3/command":
+            search_invoked.append(str(request.url))
+            return httpx.Response(200, json={"status": "queued"})
+        return httpx.Response(404)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(sonarr_handler))
+    remediator = Remediator(test_settings, client=mock_http)
+    notifier = MagicMock(spec=Notifier)
+    notifier.send_discord = AsyncMock(return_value=True)
+
+    inspector = PreDownloadInspector(
+        settings=test_settings,
+        history=history,
+        remediator=remediator,
+        notifier=notifier,
+        qbit_client=qbit_client,
+    )
+
+    grab_event = {
+        "eventType": "Grab",
+        "downloadClient": "qBittorrent",
+        "downloadId": torrent_hash,
+        "series": {"id": 15, "title": "Show Title"},
+        "episodes": [{"id": 205}],
+        "release": {
+            "releaseTitle": release_title,
+            "indexer": "TestIndexer",
+            "size": 100000000,
+        },
+    }
+
+    result = await inspector.inspect_grab_event(grab_event)
+    assert result is True
+
+    # Assert qBittorrent deletion
+    qbit_client.delete_torrent.assert_awaited_once_with(torrent_hash, delete_files=True)
+
+    # Assert Servarr queue deletion was called with exact params
+    assert len(queue_delete_invoked) == 1
+    url_str, params = queue_delete_invoked[0]
+    assert "/api/v3/queue/77" in url_str
+    assert params.get("blocklist") == "true"
+    assert params.get("skipRedownload") == "false"
+    assert params.get("removeFromClient") == "false"
+
+    # Assert Sonarr POST /api/v3/blocklist was NEVER called
+    assert len(blocklist_post_invoked) == 0
+
+    # Assert replacement search triggered
+    assert len(search_invoked) == 1
+
+    # Assert history recorded
+    entries = await history.recent(limit=10)
+    assert len(entries) == 1
+    assert entries[0].status == VerificationStatus.REJECTED_PRE_DOWNLOAD
+    assert "Removed queue item 77 and blocklisted release" in entries[0].remediation
+
+    await history.close()
+    await mock_http.aclose()
+
+
+@pytest.mark.anyio
+async def test_remediator_queue_blocklist_fallback_to_history(test_settings: Settings) -> None:
+    download_id = "test_download_hash_fallback"
+    queue_called = []
+    history_failed_called = []
+
+    def sonarr_handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/api/v3/queue":
+            queue_called.append(path)
+            return httpx.Response(200, json={"records": []})
+        if path.startswith("/api/v3/history/failed/"):
+            history_failed_called.append(path)
+            return httpx.Response(200, json={})
+        if path in ("/api/v3/history/series", "/api/v3/history"):
+            return httpx.Response(
+                200,
+                json={
+                    "records": [
+                        {
+                            "id": 1234,
+                            "eventType": "grabbed",
+                            "sourceTitle": "Test.Release.Title",
+                            "downloadId": download_id,
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    mock_http = httpx.AsyncClient(transport=httpx.MockTransport(sonarr_handler))
+    remediator = Remediator(test_settings, client=mock_http)
+
+    res = await remediator.remove_from_queue_and_blocklist(
+        "sonarr",
+        download_id,
+        release_title="Test.Release.Title",
+        entity_id=1,
+    )
+    assert len(queue_called) == 1
+    assert len(history_failed_called) == 1
+    assert "/api/v3/history/failed/1234" in history_failed_called[0]
+    assert "Blocklisted release via history record 1234" in res
+
+    await mock_http.aclose()

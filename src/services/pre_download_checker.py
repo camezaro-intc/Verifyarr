@@ -210,16 +210,16 @@ class PreDownloadInspector:
 
         # B. Call Servarr remediation
         try:
-            msg = await self._remediator.blocklist_release(
+            msg = await self._remediator.remove_from_queue_and_blocklist(
                 app_name,
-                release_title,
+                download_id,
+                release_title=release_title,
                 entity_id=entity_id or 0,
-                download_id=download_id,
                 indexer=indexer,
                 size=size,
                 episode_ids=episode_ids,
             )
-            remediation_actions.append(msg)
+            remediation_actions.append(str(msg))
         except Exception as exc:
             logger.warning("Tier 0: Servarr blocklist failed for %s: %s", release_title, exc)
             remediation_actions.append(f"Servarr blocklist error: {exc}")
@@ -231,7 +231,7 @@ class PreDownloadInspector:
                     entity_id,
                     episode_ids=episode_ids,
                 )
-                remediation_actions.append(search_msg)
+                remediation_actions.append(str(search_msg))
             except Exception as exc:
                 logger.warning("Tier 0: Servarr re-search failed for %s: %s", release_title, exc)
 

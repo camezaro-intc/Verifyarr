@@ -99,6 +99,109 @@ class Remediator:
         await self._request(app, "DELETE", f"/api/v3/{resource}/{file_id}")
         return f"Deleted {resource} {file_id}"
 
+    async def remove_from_queue_and_blocklist(
+        self,
+        app: AppName,
+        download_id: str,
+        *,
+        release_title: str = "",
+        entity_id: int | None = None,
+        indexer: str | None = None,
+        size: int | None = None,
+        episode_ids: list[int] | None = None,
+    ) -> str:
+        """Remove a release from the active Servarr queue and blocklist it.
+
+        1. Query the active queue (GET /api/v3/queue?includeUnknownSeriesItems=true).
+        2. Search items for item.get('downloadId', '').lower() == download_hash.lower().
+        3. If found: DELETE /api/v3/queue/{id}
+           with params blocklist=true, skipRedownload=false, removeFromClient=false.
+        4. If not found in queue: log a debug entry and fall back to
+           POST /api/v3/history/failed/{id}.
+        """
+        queue_params = (
+            {"includeUnknownSeriesItems": "true"}
+            if app == "sonarr"
+            else {"includeUnknownMovieItems": "true"}
+        )
+        try:
+            data = await self._request(app, "GET", "/api/v3/queue", params=queue_params)
+            records = (
+                data.get("records", [])
+                if isinstance(data, dict)
+                else (data if isinstance(data, list) else [])
+            )
+            clean_hash = download_id.strip().lower()
+            matched_item = None
+            for item in records:
+                if (
+                    isinstance(item, dict)
+                    and str(item.get("downloadId", "")).strip().lower() == clean_hash
+                ):
+                    matched_item = item
+                    break
+
+            if matched_item and matched_item.get("id") is not None:
+                queue_id = int(matched_item["id"])
+                await self._request(
+                    app,
+                    "DELETE",
+                    f"/api/v3/queue/{queue_id}",
+                    params={
+                        "blocklist": "true",
+                        "skipRedownload": "false",
+                        "removeFromClient": "false",
+                    },
+                )
+                logger.info(
+                    "Removed queue item %d and blocklisted %s in %s",
+                    queue_id,
+                    release_title or download_id,
+                    app,
+                )
+                return f"Removed queue item {queue_id} and blocklisted release"
+        except RemediationError as exc:
+            logger.debug(
+                "Could not inspect active %s queue for downloadId %s: %s",
+                app,
+                download_id,
+                exc,
+            )
+
+        logger.debug(
+            "Download ID '%s' not found in active %s queue; falling back to history",
+            download_id,
+            app,
+        )
+        history_id = await self._find_grabbed_history_id(
+            app, release_title, entity_id, download_id
+        )
+        if history_id is not None:
+            await self._request(app, "POST", f"/api/v3/history/failed/{history_id}")
+            return f"Blocklisted release via history record {history_id}"
+
+        if app == "radarr":
+            try:
+                payload: dict[str, Any] = {
+                    "sourceTitle": release_title,
+                    "indexer": indexer,
+                    "size": size,
+                    "downloadId": download_id,
+                    "message": "Rejected by Verifyarr",
+                    "movieId": entity_id,
+                }
+                await self._request(app, "POST", "/api/v3/blocklist", json=payload)
+                return "Blocklisted release via /api/v3/blocklist"
+            except RemediationError as exc:
+                logger.warning("Radarr /api/v3/blocklist fallback failed: %s", exc)
+
+        logger.debug(
+            "No active queue item or grabbed history record found to blocklist for %s (%s)",
+            release_title,
+            download_id,
+        )
+        return f"No queue or history record found to blocklist for {release_title}"
+
     async def blocklist_release(
         self,
         app: AppName,
@@ -110,32 +213,38 @@ class Remediator:
         size: int | None = None,
         episode_ids: list[int] | None = None,
     ) -> str:
-        """Blocklist the release that produced the file.
+        """Blocklist the release that produced the file."""
+        if download_id:
+            return await self.remove_from_queue_and_blocklist(
+                app,
+                download_id,
+                release_title=release_title,
+                entity_id=entity_id,
+                indexer=indexer,
+                size=size,
+                episode_ids=episode_ids,
+            )
 
-        Servarr's supported way to blocklist an already-imported release is to mark its
-        *grabbed* history record as failed (``POST /api/v3/history/failed/{id}``). When no
-        matching history record exists, fall back to ``POST /api/v3/blocklist`` which newer
-        or patched builds may accept.
-        """
-        history_id = await self._find_grabbed_history_id(app, release_title, entity_id, download_id)
+        history_id = await self._find_grabbed_history_id(
+            app, release_title, entity_id, download_id
+        )
         if history_id is not None:
             await self._request(app, "POST", f"/api/v3/history/failed/{history_id}")
             return f"Blocklisted release via history record {history_id}"
 
-        payload: dict[str, Any] = {
-            "sourceTitle": release_title,
-            "indexer": indexer,
-            "size": size,
-            "downloadId": download_id,
-            "message": "Rejected by Verifyarr",
-        }
         if app == "radarr":
-            payload["movieId"] = entity_id
-        else:
-            payload["seriesId"] = entity_id
-            payload["episodeIds"] = episode_ids or []
-        await self._request(app, "POST", "/api/v3/blocklist", json=payload)
-        return "Blocklisted release via /api/v3/blocklist"
+            payload: dict[str, Any] = {
+                "sourceTitle": release_title,
+                "indexer": indexer,
+                "size": size,
+                "downloadId": download_id,
+                "message": "Rejected by Verifyarr",
+                "movieId": entity_id,
+            }
+            await self._request(app, "POST", "/api/v3/blocklist", json=payload)
+            return "Blocklisted release via /api/v3/blocklist"
+
+        return f"No history record found to blocklist for {release_title}"
 
     async def _find_grabbed_history_id(
         self, app: AppName, release_title: str, entity_id: int | None, download_id: str | None

@@ -204,3 +204,35 @@ def test_system_update_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             assert valid_resp.json() == {"status": "restarting"}
             assert mock_apply.called
             mock_apply.assert_called_once_with("https://example.com/asset.zip")
+
+
+def test_apply_update_terminates_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_dir = tmp_path / "Verifyarr"
+    temp_dir = install_dir / "temp"
+    install_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("VERIFYARR_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("VERIFYARR_TEMP_DIR", str(temp_dir))
+    monkeypatch.delenv("VERIFYARR_TEST_NO_EXIT", raising=False)
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        zf.writestr("test_file.txt", "updated contents")
+    zip_bytes = zip_buffer.getvalue()
+
+    def mock_get(url: str, *args, **kwargs) -> httpx.Response:
+        return httpx.Response(200, content=zip_bytes, request=httpx.Request("GET", url))
+
+    with (
+        patch("httpx.Client.get", side_effect=mock_get),
+        patch("subprocess.Popen") as mock_popen,
+        patch("time.sleep") as mock_sleep,
+        patch("os._exit") as mock_exit,
+    ):
+        manager = UpdateManager(current_version="1.5.6")
+        manager.apply_update("https://example.com/update.zip", exit_process=True)
+
+        assert mock_popen.called
+        assert mock_sleep.called
+        mock_exit.assert_called_once_with(0)
+

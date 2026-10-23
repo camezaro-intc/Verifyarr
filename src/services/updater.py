@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import subprocess
-import sys
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -136,7 +137,9 @@ class UpdateManager:
         zip_path = temp_dir / "update.zip"
         updater_script = temp_dir / "updater.ps1"
 
-        # 1. Create folder C:\Verifyarr\temp\staging
+        # 1. Prepare temp and staging folders (clean old staging if exists)
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
         staging_dir.mkdir(parents=True, exist_ok=True)
 
         # 2. Download zip asset to C:\Verifyarr\temp\update.zip
@@ -154,10 +157,39 @@ class UpdateManager:
 
         # 4. Write C:\Verifyarr\temp\updater.ps1
         ps_content = f"""# Verifyarr Updater Script
+$ErrorActionPreference = 'Continue'
+$target = "{target_dir}"
+$logsDir = Join-Path $target "logs"
+if (-not (Test-Path $logsDir)) {{
+    New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+}}
+$logFile = Join-Path $logsDir "updater.log"
+try {{
+    Start-Transcript -Path $logFile -Append -ErrorAction SilentlyContinue
+}} catch {{}}
+
+Write-Host "============================================="
+Write-Host "[Verifyarr Updater] Starting update at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "[Verifyarr Updater] Target directory: $target"
+Write-Host "[Verifyarr Updater] Staging directory: {staging_dir}"
+Write-Host "============================================="
+
+Write-Host "[Verifyarr Updater] Waiting 3 seconds for initial process release..."
 Start-Sleep -Seconds 3
 
-Write-Host "Stopping Verifyarr service..."
-& nssm stop Verifyarr 2>$null
+$nssm = Join-Path $target "nssm.exe"
+if (Test-Path $nssm) {{
+    Write-Host "[Verifyarr Updater] Stopping service via $nssm..."
+    & $nssm stop Verifyarr 2>&1 | Out-Null
+}}
+
+Write-Host "[Verifyarr Updater] Stopping service via Stop-Service..."
+Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
+
+Write-Host "[Verifyarr Updater] Ensuring all verifyarr processes are terminated..."
+Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
 
 $staging = "{staging_dir}"
 $items = Get-ChildItem -Path $staging
@@ -165,21 +197,30 @@ if ($items.Count -eq 1 -and $items[0].PSIsContainer) {{
     $staging = $items[0].FullName
 }}
 
-$target = "{target_dir}"
 $excluded = @("data", "config.yaml", ".env", "logs", "temp")
-
-Write-Host "Copying updated files to $target..."
+Write-Host "[Verifyarr Updater] Copying updated files from $staging to $target..."
 Get-ChildItem -Path $staging | ForEach-Object {{
     if ($excluded -notcontains $_.Name) {{
-        Copy-Item -Path $_.FullName -Destination $target -Recurse -Force
+        Write-Host "  -> Updating $($_.Name)..."
+        Copy-Item -Path $_.FullName -Destination $target -Recurse -Force -ErrorAction Continue
     }}
 }}
 
-Write-Host "Restarting Verifyarr service..."
-& nssm start Verifyarr 2>$null
+Write-Host "[Verifyarr Updater] Restarting Verifyarr service..."
+if (Test-Path $nssm) {{
+    & $nssm start Verifyarr 2>&1 | Out-Null
+}}
+Start-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
 
-Start-Sleep -Seconds 1
-Remove-Item -Path "{temp_dir}" -Recurse -Force -ErrorAction SilentlyContinue
+Write-Host "[Verifyarr Updater] Cleaning up temporary staging files..."
+Start-Sleep -Seconds 2
+Remove-Item -Path "$staging" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "{zip_path}" -Force -ErrorAction SilentlyContinue
+
+Write-Host "[Verifyarr Updater] Update finished at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+try {{
+    Stop-Transcript -ErrorAction SilentlyContinue
+}} catch {{}}
 """
         with open(updater_script, "w", encoding="utf-8") as f:
             f.write(ps_content)
@@ -199,13 +240,17 @@ Remove-Item -Path "{temp_dir}" -Recurse -Force -ErrorAction SilentlyContinue
             subprocess.Popen(
                 ps_cmd,
                 creationflags=creationflags,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 close_fds=True,
             )
         except Exception as exc:
             logger.error("Failed to spawn updater process: %s", exc)
             raise
 
-        # 6. Immediately call sys.exit(0) to release file locks
+        # 6. Immediately call os._exit(0) to release file locks
         if exit_process and os.getenv("VERIFYARR_TEST_NO_EXIT") != "1":
             logger.info("Terminating process to release file locks for update")
-            sys.exit(0)
+            time.sleep(0.5)
+            os._exit(0)

@@ -1698,9 +1698,11 @@
       _isUpdating = true;
       const confirmView = document.getElementById('update-modal-confirm-view');
       const progressView = document.getElementById('update-modal-progress-view');
+      const progressMsg = document.getElementById('update-progress-message');
 
       if (confirmView) confirmView.style.display = 'none';
       if (progressView) progressView.style.display = 'block';
+      if (progressMsg) progressMsg.textContent = 'Downloading update package and applying changes... Please wait.';
 
       try {
         const res = await fetch('/api/v1/system/update/apply', {
@@ -1716,20 +1718,54 @@
         console.warn('Initial apply request error or disconnect:', err);
       }
 
-      // Poll GET /api/v1/system/update/check every 2000ms inside try/catch
-      setTimeout(() => {
-        const pollInterval = setInterval(async () => {
-          try {
-            const checkRes = await fetch('/api/v1/system/update/check', { cache: 'no-store' });
-            if (checkRes.status === 200) {
+      const initialVersion = document.getElementById('update-current-version-badge')?.textContent?.replace(/^v/i, '').trim();
+      let hasGoneDown = false;
+      let elapsedSeconds = 0;
+      const maxWaitSeconds = 90;
+
+      const pollInterval = setInterval(async () => {
+        elapsedSeconds += 2;
+
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2500);
+          const checkRes = await fetch('/api/v1/system/update/check', {
+            cache: 'no-store',
+            signal: controller.signal
+          });
+          clearTimeout(timeoutId);
+
+          if (checkRes.ok) {
+            const data = await checkRes.json();
+            const newVersion = (data.current_version || '').trim();
+
+            // We consider the restart complete if:
+            // 1. We observed the service go down and come back up, OR
+            // 2. The returned version has changed from the initial version
+            if (hasGoneDown || (initialVersion && newVersion && newVersion !== initialVersion)) {
               clearInterval(pollInterval);
-              window.location.reload();
+              if (progressMsg) progressMsg.textContent = 'Update applied successfully! Reloading page...';
+              setTimeout(() => {
+                window.location.reload();
+              }, 1500);
+              return;
             }
-          } catch (e) {
-            console.debug('Waiting for service restart...', e);
           }
-        }, 2000);
-      }, 3000);
+        } catch (e) {
+          // Connection failed / dropped -> the service is shutting down or restarting!
+          hasGoneDown = true;
+          if (progressMsg) {
+            progressMsg.textContent = 'Service is restarting... Waiting to reconnect...';
+          }
+        }
+
+        if (elapsedSeconds >= maxWaitSeconds) {
+          clearInterval(pollInterval);
+          if (progressMsg) {
+            progressMsg.innerHTML = '<span style="color: #ef4444;">Update timed out. Please check service status or logs at C:\\Verifyarr\\logs\\updater.log</span>';
+          }
+        }
+      }, 2000);
     }
 
     // Set up 3-second polling interval and update check on DOMContentLoaded

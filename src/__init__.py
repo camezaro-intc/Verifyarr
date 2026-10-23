@@ -1,3 +1,3 @@
 """Verifyarr: multi-tier media verification companion for Radarr, Sonarr and Jellyfin."""
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"

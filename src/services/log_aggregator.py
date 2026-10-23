@@ -53,6 +53,122 @@ JELLYFIN_LOG_REGEX = re.compile(
 )
 
 
+def to_utc(dt: datetime) -> datetime:
+    """Normalize datetime to UTC. If naive, treat as local system time before converting."""
+    if dt.tzinfo is None:
+        return dt.astimezone(UTC)
+    return dt.astimezone(UTC)
+
+
+def extract_search_tokens(
+    title: str, release_name: str, download_hash: str | None
+) -> dict[str, Any]:
+    """Extract search tokens: series name (e.g. 'Avatar'), episode code (e.g. 'S01E08'),
+    and download hash for robust log matching across services.
+    """
+    combined = f"{title or ''} {release_name or ''}"
+    hash_clean = download_hash.lower().strip() if download_hash else None
+
+    # 1. Episode code tokens (e.g. 's01e08', '1x08')
+    episode_codes: list[str] = []
+    for m in re.finditer(r"\b[Ss](\d{1,2})[Ee](\d{1,3})\b", combined):
+        s_num, e_num = int(m.group(1)), int(m.group(2))
+        episode_codes.extend([
+            f"s{s_num:02d}e{e_num:02d}",
+            f"s{s_num}e{e_num}",
+            f"{s_num}x{e_num:02d}",
+            f"{s_num}x{e_num}",
+        ])
+    for m in re.finditer(r"\b(\d{1,2})x(\d{1,3})\b", combined):
+        s_num, e_num = int(m.group(1)), int(m.group(2))
+        episode_codes.extend([
+            f"s{s_num:02d}e{e_num:02d}",
+            f"s{s_num}e{e_num}",
+            f"{s_num}x{e_num:02d}",
+            f"{s_num}x{e_num}",
+        ])
+
+    # 2. Series name tokens (e.g. 'Avatar' from 'Avatar: Seven Havens - S01E08')
+    series_names: list[str] = []
+    if title:
+        parts = re.split(
+            r"[-–—]\s*[Ss]\d+|[Ss]\d+[Ee]\d+|\b\d{1,2}x\d{1,3}\b",
+            title,
+            flags=re.IGNORECASE,
+        )
+        base = parts[0].strip(" :-–—")
+        if base:
+            series_names.append(base.lower())
+            clean_base = re.sub(r"[^\w\s]", " ", base).strip().lower()
+            clean_base = re.sub(r"\s+", " ", clean_base)
+            if clean_base and clean_base != base.lower():
+                series_names.append(clean_base)
+            for w in re.findall(r"[A-Za-z0-9]+", base):
+                wl = w.lower()
+                if len(wl) >= 3 and wl not in COMMON_NOISE_TOKENS:
+                    series_names.append(wl)
+
+    if release_name:
+        parts = re.split(r"[Ss]\d+[Ee]\d+|\b\d{1,2}x\d{1,3}\b", release_name, flags=re.IGNORECASE)
+        base = parts[0].replace(".", " ").strip()
+        if base:
+            clean_base = re.sub(r"\s+", " ", base).strip().lower()
+            series_names.append(clean_base)
+            for w in re.findall(r"[A-Za-z0-9]+", base):
+                wl = w.lower()
+                if len(wl) >= 3 and wl not in COMMON_NOISE_TOKENS:
+                    series_names.append(wl)
+
+    keywords = extract_keywords(release_name, title)
+
+    return {
+        "download_hash": hash_clean,
+        "episode_codes": list(dict.fromkeys(episode_codes)),
+        "series_names": list(dict.fromkeys(series_names)),
+        "keywords": keywords,
+        "title_lower": (title or "").lower().strip(),
+        "release_lower": (release_name or "").lower().strip(),
+    }
+
+
+def matches_log_line(
+    line_lower: str, tokens: dict[str, Any], extra_term: str | None = None
+) -> bool:
+    """Determine if a log line matches based on download hash OR (series name AND episode code)."""
+    # 1. Download hash match
+    hash_val = tokens.get("download_hash")
+    if hash_val and hash_val in line_lower:
+        return True
+
+    # 2. Series name AND episode code match
+    ep_codes = tokens.get("episode_codes", [])
+    series_names = tokens.get("series_names", [])
+    if ep_codes and series_names:
+        has_ep = any(ep in line_lower for ep in ep_codes)
+        has_series = any(s in line_lower for s in series_names)
+        if has_ep and has_series:
+            return True
+
+    # 3. If no episode code (e.g. movies), match if any series candidate name is in line
+    if not ep_codes and series_names:
+        if any(s in line_lower for s in series_names if len(s) >= 4):
+            return True
+
+    # 4. Optional extra term (e.g. media filename in Jellyfin)
+    if extra_term and extra_term.lower() in line_lower:
+        return True
+
+    # 5. Full release name or title fallback
+    rel_lower = tokens.get("release_lower")
+    if rel_lower and rel_lower in line_lower:
+        return True
+    title_lower = tokens.get("title_lower")
+    if title_lower and len(title_lower) >= 4 and title_lower in line_lower:
+        return True
+
+    return False
+
+
 def extract_keywords(release_name: str, title: str) -> list[str]:
     """Extract distinct meaningful keywords from release name and title."""
     tokens = re.findall(r"[A-Za-z0-9]+", release_name or "")
@@ -115,19 +231,11 @@ def parse_timestamp(ts_str: str) -> datetime | None:
 
 
 def is_in_window(dt: datetime, window_start: datetime, window_end: datetime) -> bool:
-    """Determine whether datetime falls in [window_start, window_end] with tz reconciliation."""
-    test_dt = dt
-    start = window_start
-    end = window_end
-
-    # If test_dt is naive but window is aware, assume local or window's tz
-    if test_dt.tzinfo is None and start.tzinfo is not None:
-        test_dt = test_dt.replace(tzinfo=start.tzinfo)
-    elif test_dt.tzinfo is not None and start.tzinfo is None:
-        start = start.replace(tzinfo=test_dt.tzinfo)
-        end = end.replace(tzinfo=test_dt.tzinfo)
-
-    return start <= test_dt <= end
+    """Determine whether datetime falls in [window_start, window_end], normalized to UTC."""
+    dt_utc = to_utc(dt)
+    start_utc = to_utc(window_start)
+    end_utc = to_utc(window_end)
+    return start_utc <= dt_utc <= end_utc
 
 
 class LogAggregator:
@@ -159,9 +267,10 @@ class LogAggregator:
     async def aggregate_for_record(self, record: HistoryEntry) -> dict[str, Any]:
         """Aggregate log lines across all available services for a retrieved history record."""
         event_dt = record.timestamp
-        # Calculate time window: [event_time - 45 min] to [event_time + 45 min]
-        window_start = event_dt - timedelta(minutes=45)
-        window_end = event_dt + timedelta(minutes=45)
+        # Calculate time window: [event_time - 45 min] to [event_time + 45 min], normalized to UTC
+        event_utc = to_utc(event_dt)
+        window_start = event_utc - timedelta(minutes=45)
+        window_end = event_utc + timedelta(minutes=45)
 
         title = record.title or ""
         release_name = record.release_name or ""
@@ -169,14 +278,22 @@ class LogAggregator:
         source_app = record.source_app or record.app or ""
         file_path = record.file_path
 
+        tokens = extract_search_tokens(title, release_name, hash_val)
+
         # Gather events concurrently from all 4 data collectors
         results = await asyncio.gather(
-            self.collect_qbittorrent(window_start, window_end, hash_val, release_name, title),
-            self.collect_verifyarr(window_start, window_end, hash_val, release_name, title),
-            self.collect_servarr(
-                source_app, window_start, window_end, hash_val, release_name, title
+            self.collect_qbittorrent(
+                window_start, window_end, hash_val, release_name, title, tokens=tokens
             ),
-            self.collect_jellyfin(window_start, window_end, file_path, release_name, title),
+            self.collect_verifyarr(
+                window_start, window_end, hash_val, release_name, title, tokens=tokens
+            ),
+            self.collect_servarr(
+                source_app, window_start, window_end, hash_val, release_name, title, tokens=tokens
+            ),
+            self.collect_jellyfin(
+                window_start, window_end, file_path, release_name, title, tokens=tokens
+            ),
             return_exceptions=True,
         )
 
@@ -198,8 +315,8 @@ class LogAggregator:
             parsed = parse_timestamp(item.get("timestamp", ""))
             if parsed is None:
                 parsed = datetime.min.replace(tzinfo=UTC)
-            elif parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=UTC)
+            else:
+                parsed = to_utc(parsed)
             return (parsed, item.get("app", ""))
 
         merged_events.sort(key=sort_key)
@@ -228,11 +345,18 @@ class LogAggregator:
         self,
         window_start: datetime,
         window_end: datetime,
-        hash_val: str | None,
-        release_name: str,
-        title: str,
+        hash_val: Any = None,
+        release_name: str = "",
+        title: str = "",
+        tokens: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect logs from qBittorrent Web API falling within the time window."""
+        if tokens is None:
+            if isinstance(hash_val, dict):
+                tokens = hash_val
+            else:
+                tokens = extract_search_tokens(title, release_name, hash_val)
+
         events: list[dict[str, Any]] = []
         base_url = "http://localhost:8080"
         if self._settings and getattr(self._settings, "qbittorrent", None):
@@ -247,9 +371,15 @@ class LogAggregator:
             "warning": "true",
             "critical": "true",
         }
+        # Provide headers with Referer & Origin to satisfy qBittorrent CSRF protection
+        headers = {
+            "Referer": f"{base_url}/",
+            "Origin": base_url,
+        }
 
-        keywords = extract_keywords(release_name, title)
-        hash_clean = hash_val.lower().strip() if hash_val else None
+        cfg_obj = getattr(self._settings, "qbittorrent", None) if self._settings else None
+        username = getattr(cfg_obj, "username", "admin") or "admin"
+        password = getattr(cfg_obj, "password", "") or ""
 
         client_to_close: httpx.AsyncClient | None = None
         client = self._http_client
@@ -258,23 +388,16 @@ class LogAggregator:
             client_to_close = client
 
         try:
-            resp = await client.get(endpoint, params=params)
-            # Handle potential authentication requirement
-            if (
-                resp.status_code in (401, 403)
-                and self._settings
-                and getattr(self._settings, "qbittorrent", None)
-            ):
-                qbit_cfg = self._settings.qbittorrent
-                username = getattr(qbit_cfg, "username", "admin")
-                password = getattr(qbit_cfg, "password", "")
+            resp = await client.get(endpoint, params=params, headers=headers)
+            # Handle potential authentication requirement (401 Unauthorized or 403 Forbidden)
+            if resp.status_code in (401, 403):
                 login_resp = await client.post(
                     f"{base_url}/api/v2/auth/login",
                     data={"username": username, "password": password},
-                    headers={"Referer": f"{base_url}/"},
+                    headers=headers,
                 )
                 if login_resp.status_code in (200, 204):
-                    resp = await client.get(endpoint, params=params)
+                    resp = await client.get(endpoint, params=params, headers=headers)
 
             if resp.status_code != 200:
                 logger.warning(
@@ -311,11 +434,7 @@ class LogAggregator:
                 msg = str(item.get("message", ""))
                 msg_lower = msg.lower()
 
-                # Filter: hash in message OR release keywords in message
-                hash_match = hash_clean and (hash_clean in msg_lower)
-                kw_match = any(kw in msg_lower for kw in keywords)
-
-                if not (hash_match or kw_match):
+                if not matches_log_line(msg_lower, tokens):
                     continue
 
                 # qBittorrent log type bitmask: 1=Normal, 2=Info, 4=Warning, 8=Critical
@@ -332,7 +451,7 @@ class LogAggregator:
                     level = "INFO"
 
                 events.append({
-                    "timestamp": dt.astimezone(UTC).isoformat(),
+                    "timestamp": to_utc(dt).isoformat(),
                     "app": "qBittorrent",
                     "level": level,
                     "message": msg,
@@ -352,20 +471,25 @@ class LogAggregator:
         self,
         window_start: datetime,
         window_end: datetime,
-        hash_val: str | None,
-        release_name: str,
-        title: str,
+        hash_val: Any = None,
+        release_name: str = "",
+        title: str = "",
+        tokens: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect logs from verifyarr.log matching the record in the time window."""
+        if tokens is None:
+            if isinstance(hash_val, dict):
+                tokens = hash_val
+            else:
+                tokens = extract_search_tokens(title, release_name, hash_val)
+
         log_path = resolve_log_path()
         return await asyncio.to_thread(
             self._read_verifyarr_file,
             log_path,
             window_start,
             window_end,
-            hash_val,
-            release_name,
-            title,
+            tokens,
         )
 
     def _read_verifyarr_file(
@@ -373,18 +497,13 @@ class LogAggregator:
         log_path: Path,
         window_start: datetime,
         window_end: datetime,
-        hash_val: str | None,
-        release_name: str,
-        title: str,
+        tokens: dict[str, Any],
     ) -> list[dict[str, Any]]:
         if not log_path.exists():
             logger.warning("Verifyarr log file not found at %s", log_path)
             return []
 
         events: list[dict[str, Any]] = []
-        rel_lower = (release_name or "").lower().strip()
-        title_lower = (title or "").lower().strip()
-        hash_lower = (hash_val or "").lower().strip() if hash_val else None
 
         try:
             with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -404,20 +523,16 @@ class LogAggregator:
 
             ts_str, lvl_str, _, message = match.groups()
             dt = parse_timestamp(ts_str)
-            if dt is None or not is_in_window(dt, window_start, window_end):
+            if dt is None:
+                continue
+
+            dt_utc = to_utc(dt)
+            if not is_in_window(dt_utc, window_start, window_end):
                 continue
 
             line_lower = stripped.lower()
-            rel_match = rel_lower and (rel_lower in line_lower)
-            title_match = title_lower and (title_lower in line_lower)
-            hash_match = hash_lower and (hash_lower in line_lower)
-
-            if not (rel_match or title_match or hash_match):
+            if not matches_log_line(line_lower, tokens):
                 continue
-
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=window_start.tzinfo or UTC)
-            dt_utc = dt.astimezone(UTC)
 
             events.append({
                 "timestamp": dt_utc.isoformat(),
@@ -436,11 +551,18 @@ class LogAggregator:
         source_app: str,
         window_start: datetime,
         window_end: datetime,
-        hash_val: str | None,
-        release_name: str,
-        title: str,
+        hash_val: Any = None,
+        release_name: str = "",
+        title: str = "",
+        tokens: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect logs from Sonarr or Radarr matching the record in the time window."""
+        if tokens is None:
+            if isinstance(hash_val, dict):
+                tokens = hash_val
+            else:
+                tokens = extract_search_tokens(title, release_name, hash_val)
+
         app_lower = (source_app or "").lower().strip()
         if "sonarr" in app_lower:
             target_app = "Sonarr"
@@ -455,8 +577,7 @@ class LogAggregator:
             log_path,
             window_start,
             window_end,
-            hash_val,
-            title,
+            tokens,
         )
 
     def _read_servarr_file(
@@ -465,16 +586,13 @@ class LogAggregator:
         log_path: Path,
         window_start: datetime,
         window_end: datetime,
-        hash_val: str | None,
-        title: str,
+        tokens: dict[str, Any],
     ) -> list[dict[str, Any]]:
         if not log_path.exists():
             logger.warning("%s log file not found at %s", app_name, log_path)
             return []
 
         events: list[dict[str, Any]] = []
-        title_lower = (title or "").lower().strip()
-        hash_lower = (hash_val or "").lower().strip() if hash_val else None
 
         try:
             with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -507,19 +625,16 @@ class LogAggregator:
                 if m_gen:
                     dt = parse_timestamp(m_gen.group(1))
 
-            if dt is None or not is_in_window(dt, window_start, window_end):
+            if dt is None:
+                continue
+
+            dt_utc = to_utc(dt)
+            if not is_in_window(dt_utc, window_start, window_end):
                 continue
 
             line_lower = stripped.lower()
-            title_match = title_lower and (title_lower in line_lower)
-            hash_match = hash_lower and (hash_lower in line_lower)
-
-            if not (title_match or hash_match):
+            if not matches_log_line(line_lower, tokens):
                 continue
-
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=window_start.tzinfo or UTC)
-            dt_utc = dt.astimezone(UTC)
 
             events.append({
                 "timestamp": dt_utc.isoformat(),
@@ -537,11 +652,15 @@ class LogAggregator:
         self,
         window_start: datetime,
         window_end: datetime,
-        file_path: str | None,
-        release_name: str,
-        title: str,
+        file_path: str | None = None,
+        release_name: str = "",
+        title: str = "",
+        tokens: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """Collect logs from the most recent Jellyfin log file in the log directory."""
+        if tokens is None:
+            tokens = extract_search_tokens(title, release_name, None)
+
         log_dir = Path(os.getenv("JELLYFIN_LOG_DIR") or DEFAULT_JELLYFIN_LOG_DIR)
         return await asyncio.to_thread(
             self._read_jellyfin_directory,
@@ -549,8 +668,7 @@ class LogAggregator:
             window_start,
             window_end,
             file_path,
-            release_name,
-            title,
+            tokens,
         )
 
     def _read_jellyfin_directory(
@@ -559,8 +677,7 @@ class LogAggregator:
         window_start: datetime,
         window_end: datetime,
         file_path: str | None,
-        release_name: str,
-        title: str,
+        tokens: dict[str, Any],
     ) -> list[dict[str, Any]]:
         if not log_dir.exists() or not log_dir.is_dir():
             logger.warning("Jellyfin log directory not found at %s", log_dir)
@@ -585,8 +702,6 @@ class LogAggregator:
             return []
 
         media_name = Path(file_path).name.lower() if file_path else None
-        title_lower = (title or "").lower().strip()
-        rel_lower = (release_name or "").lower().strip()
 
         for line in lines:
             stripped = line.strip()
@@ -599,20 +714,16 @@ class LogAggregator:
 
             ts_str, lvl_str, message = match.groups()
             dt = parse_timestamp(ts_str)
-            if dt is None or not is_in_window(dt, window_start, window_end):
+            if dt is None:
+                continue
+
+            dt_utc = to_utc(dt)
+            if not is_in_window(dt_utc, window_start, window_end):
                 continue
 
             line_lower = stripped.lower()
-            media_match = media_name and (media_name in line_lower)
-            title_match = title_lower and (title_lower in line_lower)
-            rel_match = rel_lower and (rel_lower in line_lower)
-
-            if not (media_match or title_match or rel_match):
+            if not matches_log_line(line_lower, tokens, extra_term=media_name):
                 continue
-
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=window_start.tzinfo or UTC)
-            dt_utc = dt.astimezone(UTC)
 
             events.append({
                 "timestamp": dt_utc.isoformat(),

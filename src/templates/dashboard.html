@@ -469,7 +469,7 @@
               <details>
                 <summary>
                   Checks &amp; actions ({{ e.checks|selectattr("passed")|list|length }} passed)
-                  <button type="button" onclick="event.stopPropagation(); openCorrelatedLogs({{ e.id }})" class="ml-2 px-2 py-0.5 text-[11px] font-semibold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition">LOGS ALL</button>
+                  <button type="button" class="btn-logs-all ml-2 px-2 py-0.5 text-[11px] font-semibold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition" data-id="{{ e.id }}" onclick="event.stopPropagation(); openCorrelatedLogs({{ e.id }})">LOGS ALL</button>
                 </summary>
                 <ul>
                   {% for c in e.checks %}
@@ -481,7 +481,7 @@
                 </ul>
               </details>
               {% else %}
-              <button type="button" onclick="openCorrelatedLogs({{ e.id }})" class="px-2 py-0.5 text-[11px] font-semibold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition">LOGS ALL</button>
+              <button type="button" class="btn-logs-all px-2 py-0.5 text-[11px] font-semibold rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition" data-id="{{ e.id }}" onclick="event.stopPropagation(); openCorrelatedLogs({{ e.id }})">LOGS ALL</button>
               {% endif %}
             </td>
             <td class="nowrap">
@@ -568,7 +568,7 @@
         {% endif %}
 
         <!-- Mobile Actions Area -->
-        <button type="button" onclick="openCorrelatedLogs({{ item.id }})" class="w-full mt-2 py-1.5 px-3 text-xs font-semibold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 active:bg-indigo-500/30 flex items-center justify-center gap-1.5"><span>⚡</span> View Full Pipeline Trace (LOGS ALL)</button>
+        <button type="button" class="btn-logs-all w-full mt-2 py-1.5 px-3 text-xs font-semibold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 active:bg-indigo-500/30 flex items-center justify-center gap-1.5" data-id="{{ item.id }}" onclick="event.stopPropagation(); openCorrelatedLogs({{ item.id }})"><span>⚡</span> View Full Pipeline Trace (LOGS ALL)</button>
 
         <!-- Force Approve button for Mobile -->
         {% if item.can_force_approve %}
@@ -596,7 +596,7 @@
     {% endif %}
 
     <!-- 5. Responsive Correlated Pipeline Trace Modal -->
-    <div id="trace-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 md:p-6" role="dialog" aria-modal="true" aria-labelledby="trace-modal-title">
+    <div id="correlated-logs-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-3 md:p-6" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="trace-modal-title">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
         <!-- Modal Header -->
         <div class="p-4 border-b border-slate-800 flex items-center justify-between gap-3 bg-slate-900">
@@ -718,6 +718,10 @@
     let _cachedTraceEvents = [];
     let _activeTraceFilter = 'ALL';
 
+    function getTraceModal() {
+      return document.getElementById('correlated-logs-modal') || document.getElementById('trace-modal');
+    }
+
     function escapeHtml(str) {
       if (!str) return '';
       return String(str)
@@ -728,8 +732,11 @@
         .replace(/'/g, '&#039;');
     }
 
-    async function openCorrelatedLogs(id) {
-      const modal = document.getElementById('trace-modal');
+    async function openCorrelatedLogs(id, event) {
+      if (event && event.stopPropagation) {
+        event.stopPropagation();
+      }
+      const modal = getTraceModal();
       const terminal = document.getElementById('trace-terminal-output');
       const titleEl = document.getElementById('trace-modal-title');
       const releaseEl = document.getElementById('trace-modal-release');
@@ -782,7 +789,7 @@
     }
 
     function closeTraceModal() {
-      const modal = document.getElementById('trace-modal');
+      const modal = getTraceModal();
       if (modal) {
         modal.classList.add('hidden');
         modal.style.display = 'none';
@@ -910,7 +917,7 @@
 
     // Modal keyboard and click dismiss handlers
     document.addEventListener('DOMContentLoaded', () => {
-      const modal = document.getElementById('trace-modal');
+      const modal = getTraceModal();
       if (modal) {
         modal.addEventListener('click', (e) => {
           if (e.target === modal) closeTraceModal();

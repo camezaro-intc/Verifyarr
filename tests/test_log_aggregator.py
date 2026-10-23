@@ -118,31 +118,39 @@ async def test_aggregator_collects_and_sorts_all_sources(tmp_path: Path) -> None
     saved = await store.add(entry)
 
     # 1. Create Verifyarr log file
+    t_v1 = (base_time + timedelta(minutes=2)).isoformat()
+    t_v2 = (base_time + timedelta(minutes=3)).isoformat()
     verifyarr_log = tmp_path / "verifyarr.log"
     verifyarr_log.write_text(
-        "2026-10-23T14:32:00+00:00 INFO     src.services.verifier: PASSED for South.Park.S29E01\n"
-        "2026-10-23T14:33:00+00:00 WARNING  src.services.notifier: Discord warn South Park\n",
+        f"{t_v1} INFO     src.services.verifier: PASSED for South.Park.S29E01\n"
+        f"{t_v2} WARNING  src.services.notifier: Discord warn South Park\n",
         encoding="utf-8",
     )
     os.environ["VERIFYARR_LOG_PATH"] = str(verifyarr_log)
 
-    # 2. Create Sonarr log file
+    # 2. Create Sonarr log file (naive timestamps in local system time)
+    local_base = base_time.astimezone()
+    t_s1 = (local_base - timedelta(minutes=20)).strftime("%Y-%m-%d %H:%M:%S.0")
+    t_s2 = (local_base - timedelta(minutes=15)).strftime("%Y-%m-%d %H:%M:%S.0")
+    t_s3 = (local_base - timedelta(hours=3)).strftime("%Y-%m-%d %H:%M:%S.0")
     sonarr_log = tmp_path / "sonarr.txt"
     sonarr_log.write_text(
-        "2026-10-23 14:10:00.0|Info|DownloadDecisionMaker|Processing release for South Park\n"
-        f"2026-10-23 14:15:00.0|Error|TrackedDownloadService|Failed import with hash {hash_str}\n"
-        "2026-10-23 11:00:00.0|Info|OtherSeries|Outside 45-min window\n",
+        f"{t_s1}|Info|DownloadDecisionMaker|Processing release for South Park\n"
+        f"{t_s2}|Error|TrackedDownloadService|Failed import with hash {hash_str}\n"
+        f"{t_s3}|Info|OtherSeries|Outside 45-min window\n",
         encoding="utf-8",
     )
     os.environ["SONARR_LOG_PATH"] = str(sonarr_log)
 
     # 3. Create Jellyfin log directory with latest log file
+    t_j1 = (base_time + timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S.000 +00:00")
+    t_j2 = (base_time + timedelta(minutes=6)).strftime("%Y-%m-%d %H:%M:%S.000 +00:00")
     jellyfin_dir = tmp_path / "jellyfin_logs"
     jellyfin_dir.mkdir()
     jellyfin_log = jellyfin_dir / "log_20261023.log"
     jellyfin_log.write_text(
-        "[2026-10-23 14:35:00.000 +00:00] [INF] [1] Jellyfin: Found South.Park.S29E01.mkv\n"
-        "[2026-10-23 14:36:00.000 +00:00] [WRN] [1] Jellyfin: Probe warn South.Park.S29E01.mkv\n",
+        f"[{t_j1}] [INF] [1] Jellyfin: Found South.Park.S29E01.mkv\n"
+        f"[{t_j2}] [WRN] [1] Jellyfin: Probe warn South.Park.S29E01.mkv\n",
         encoding="utf-8",
     )
     os.environ["JELLYFIN_LOG_DIR"] = str(jellyfin_dir)
@@ -264,5 +272,75 @@ def test_api_correlated_logs_endpoint(tmp_path: Path, monkeypatch: pytest.Monkey
         dash_html = dash_resp.text
         assert f"openCorrelatedLogs({saved.id})" in dash_html
         assert "LOGS ALL" in dash_html
-        assert 'id="trace-modal"' in dash_html
+        assert "btn-logs-all" in dash_html
+        assert 'id="correlated-logs-modal"' in dash_html
         assert 'id="trace-terminal-output"' in dash_html
+
+
+def test_token_extraction_and_matching() -> None:
+    from src.services.log_aggregator import extract_search_tokens, matches_log_line
+
+    tokens = extract_search_tokens(
+        title="Avatar: Seven Havens - S01E08",
+        release_name="Avatar Seven Havens S01E08 1080p WEB h264 GRACE",
+        download_hash="11223344556677889900aabbccddeeff11223344",
+    )
+
+    assert "s01e08" in tokens["episode_codes"]
+    assert "1x08" in tokens["episode_codes"]
+    assert "avatar" in tokens["series_names"]
+    assert tokens["download_hash"] == "11223344556677889900aabbccddeeff11223344"
+
+    # Match by hash
+    assert matches_log_line(
+        "torrent with hash 11223344556677889900aabbccddeeff11223344 added", tokens
+    )
+
+    # Match by series name AND episode code
+    assert matches_log_line("imported: avatar seven havens s01e08 successfully", tokens)
+    assert matches_log_line("downloading avatar.seven.havens.s01e08.1080p...", tokens)
+    assert matches_log_line("sonarr: avatar - 1x08 grabbed", tokens)
+
+    # Reject if wrong episode
+    assert not matches_log_line("imported: avatar seven havens s01e09 successfully", tokens)
+    # Reject if wrong series
+    assert not matches_log_line("imported: legend of korra s01e08 successfully", tokens)
+
+
+@pytest.mark.anyio
+async def test_qbittorrent_auth_retry_on_403() -> None:
+    calls = []
+
+    async def mock_handler(request: httpx.Request) -> httpx.Response:
+        calls.append(str(request.url))
+        assert request.headers.get("Referer") == "http://localhost:8080/"
+
+        if "/api/v2/log/main" in str(request.url) and len(calls) == 1:
+            # First request forbidden
+            return httpx.Response(403, text="Forbidden")
+        if "/api/v2/auth/login" in str(request.url):
+            return httpx.Response(200, text="Ok.")
+        if "/api/v2/log/main" in str(request.url):
+            return httpx.Response(200, json=[{
+                "id": 1,
+                "message": "Avatar S01E08 downloaded",
+                "timestamp": int(datetime.now(UTC).timestamp() * 1000),
+                "type": 1,
+            }])
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(mock_handler)
+    async with httpx.AsyncClient(transport=transport) as http_client:
+        agg = LogAggregator(http_client=http_client)
+        now = datetime.now(UTC)
+        events = await agg.collect_qbittorrent(
+            now - timedelta(minutes=45),
+            now + timedelta(minutes=45),
+            title="Avatar - S01E08",
+            release_name="Avatar.S01E08",
+        )
+
+    assert len(events) == 1
+    assert events[0]["app"] == "qBittorrent"
+    assert "Avatar S01E08" in events[0]["message"]
+

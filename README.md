@@ -1,316 +1,259 @@
-# Verifyarr - Automated Media Verification & Mockbuster Guard for the Servarr Stack
+# Verifyarr
 
-[![GitHub release](https://img.shields.io/github/v/release/camezaro-intc/Verifyarr?logo=github)](https://github.com/camezaro-intc/Verifyarr/releases)
-[![Docker image](https://img.shields.io/badge/docker-ghcr.io%2Fcamezaro-intc%2Fverifyarr-2496ED?logo=docker&logoColor=white)](https://github.com/camezaro-intc/Verifyarr/pkgs/container/verifyarr)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/downloads/)
+<p align="center">
+  <strong>Automated Media Verification & Pre-Download Shield for Radarr, Sonarr, qBittorrent & Jellyfin</strong>
+  <br />
+  <em>Stop fake releases, corrupt video streams, and 80-minute mockbusters before they reach your media collection.</em>
+</p>
 
-Verifyarr is a companion service for **Radarr**, **Sonarr** and **Jellyfin**. It receives a webhook every time a file is imported or upgraded, inspects the file with `ffprobe`/`ffmpeg`, and only lets media into your library if it is what it claims to be. Bad files are logged (dry-run) or automatically deleted, blocklisted and re-searched.
-
-```text
-[ Radarr / Sonarr ] --(Webhook: On Grab / On Import / On Upgrade)--> [ Verifyarr :7979 ]
-     0. Tier 0 Pre-Download Manifest Inspection (qBittorrent Web API)
-          MALICIOUS / FAKE RELEASE        CLEAN VIDEO / IN PROGRESS
-             |                                     |
-          Purge from qBit, remove from      Allow torrent download to finish
-          Servarr queue, blocklist, re-search      |
-                                                   v
-     1. Path translation (Windows E:\ <-> Docker /media/)
-     2. Concurrency throttle (asyncio.Semaphore)
-     3. Tier 1 runtime delta -> Tier 2 audio sanity -> Tier 3 freeze + OCR
-          PASSED                                  FAILED
-            |                                       |
-   Jellyfin library refresh                dry_run: log + alert (Discord)
-                                           live:    delete file, blocklist release,
-                                                    trigger replacement search, alert
-```
-
-## Table of contents
-
-- [Why Verifyarr?](#why-verifyarr)
-- [Features](#features)
-- [Quick start: 1-Click Windows Installer](#quick-start-1-click-windows-installer-recommended)
-- [Quick start: Docker Compose](#quick-start-docker-compose)
-- [Quick start: Linux (systemd & tarball)](#quick-start-linux-systemd--portable-tarball)
-- [Web Settings Management](#web-settings-management)
-- [Radarr & Sonarr setup](#radarr--sonarr-setup)
-- [Configuration reference](#configuration-reference)
-- [How results work](#how-results-work)
-- [API](#api)
-- [Contributing, security and license](#contributing-security-and-license)
-
-## Why Verifyarr?
-
-Radarr and Sonarr decide what to grab from the **release title and metadata**, not from the video inside the file. Some releases are deliberately named to collide with big theatrical titles:
-
-- A studio such as **The Asylum** (or any "mockbuster" label) sells a cheap knock-off of a blockbuster under a confusingly similar name. An **86-minute** low-budget film can end up imported in place of the **173-minute** theatrical epic you actually wanted, because the title and year match.
-- Fake uploads loop a few seconds of video, or a still frame, to pad the file out to the expected length and size.
-- Releases advertise **Atmos / TrueHD / 7.1** but ship a plain stereo track, or carry no audio in the movie's original language.
-
-The most reliable tell is the **runtime delta**: the container duration compared with the runtime Radarr/Sonarr expect. Verifyarr checks that first, then looks deeper only if the file is plausible. You find out about a mockbuster before the family sits down to watch it.
-
-## Features
-
-**Multi-tier verification pipeline** (checks run in order; earlier tier failure stops the pipeline immediately)
-
-| Tier | Check | What it does |
-|------|-------|--------------|
-| 0 | **Pre-Download Manifest Inspection** (qBittorrent) | Intercepts Sonarr/Radarr **On Grab** webhooks, inspects internal torrent file manifest via qBittorrent Web API, and purges fake releases (`.7z`, `.zip`, `.rar`, `.exe`, `.iso`, or releases with zero video files) before bytes download to disk. Blocklists the release and triggers an automatic replacement search. |
-| 1 | **Runtime delta** | `ffprobe` container duration vs. the expected runtime. Fails if the difference exceeds `runtime_delta_threshold_minutes` (default 15). Multi-episode Sonarr files are scaled by episode count. |
-| 2 | **Stream and channel verification** | At least one audio stream must match the movie's original language, and releases advertising Atmos, 7.1 or TrueHD must contain more than a stereo track. |
-| 3 | **Freeze-frame / loop detection** | `ffmpeg freezedetect` on a 3-minute sample (minutes 10-13). Fails if more than 30% of the sample is frozen. |
-| 3 | **Credits OCR** (optional) | Reads 2 opening and 2 ending frames with Tesseract and rejects blacklisted strings such as "The Asylum" or "Syfy Channel". |
-
-**Operations & User Experience**
-
-- **Modern Web Dashboard** at `/`: real-time view of recent verifications with timestamp, title, release name, probed vs. expected runtime, check breakdown, failure reasons, and responsive card views on mobile.
-- **Correlated Pipeline Trace (LOGS ALL)**: Unified multi-service diagnostic terminal correlating logs across Verifyarr, qBittorrent, Sonarr/Radarr, and Jellyfin within a ±45 minute temporal window. Features token/hash matching, timezone normalization, instant source filtering (`Verifyarr`, `qBittorrent`, `Sonarr/Radarr`, `Jellyfin`), one-click clipboard export, and iOS-optimized touch scrolling.
-- **In-App Self-Updater & Update Alerts**: Non-intrusive alert banner on the dashboard when a new release is available, plus an Updates manager in Settings with changelog inspection, background binary staging, and automated health polling with reconnection.
-- **Arr-Style Settings UI** at `/settings`: configure verification engine, analysis tiers, Servarr connections, qBittorrent download client, notifications, software updates, and path mappings with live in-memory hot reloading.
-- **Mobile-Optimized Responsive Experience**: Dedicated mobile cards, compact floating windows on desktop, horizontal chip navigation bars, and touch gestures built for phone and tablet browsers.
-- **Tiered Binary Resolution & Locked File Browser**: Auto-detects `ffprobe`, `ffmpeg`, and `tesseract` across system `PATH` and common vendor directories (Jellyfin Server, Chocolatey, Program Files, Linux `/usr`), supports manual overrides, and provides a restricted server-side filesystem navigator.
-- **Connection Testers**: real-time API status validation for Radarr, Sonarr, Jellyfin, and qBittorrent with password masking toggles.
-- **Force Approve**: one-click whitelist for false positives such as director's cuts and extended editions. It also triggers a Jellyfin refresh.
-- **Dry-run mode** (on by default): runs every check and records the results, but never deletes or blocklists anything.
-- **Safe remediation** (live mode): delete the file, blocklist the release, then trigger a replacement search. The search only runs if the first two steps succeeded.
-- **Path mapping**: translate Servarr paths to container/host paths (`E:\Temp_Flex_Media\` to `/media/`), by prefix or regex.
-- **Concurrency throttling**: `max_concurrent_probes` limits simultaneous ffmpeg/ffprobe runs so a season-pack import cannot exhaust disk I/O.
-- **Multi-Platform Distributions**: 1-Click Windows Setup (`.exe`), Windows Portable (`.zip`), Linux Portable (`.tar.gz`), and multi-arch Docker images (`linux/amd64`, `linux/arm64`).
+<p align="center">
+  <a href="https://github.com/camezaro-intc/Verifyarr/releases"><img src="https://img.shields.io/github/v/release/camezaro-intc/Verifyarr?style=for-the-badge&logo=github&color=blue" alt="GitHub Release" /></a>
+  <a href="https://github.com/camezaro-intc/Verifyarr/pkgs/container/verifyarr"><img src="https://img.shields.io/badge/docker-ghcr.io-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker Image" /></a>
+  <a href="https://github.com/camezaro-intc/Verifyarr/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=for-the-badge" alt="License: MIT" /></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.11+" /></a>
+</p>
 
 ---
 
-## Quick start: 1-Click Windows Installer (Recommended)
+## 💡 Why Verifyarr?
 
-Verifyarr provides a standalone 1-click Windows installer that requires no Python installation:
+Radarr and Sonarr automate downloads based on **release titles and tracker metadata**, not the video inside the file. That leaves your home server open to common traps:
 
-1. Download **`Verifyarr-windows-x64-Setup.exe`** from the [Latest GitHub Release](https://github.com/camezaro-intc/Verifyarr/releases/latest).
-2. Right-click and run as Administrator.
-3. The installer extracts all dependencies to `C:\Verifyarr`, bundles `nssm.exe`, automatically registers and starts the background Windows Service, and opens the dashboard at <http://localhost:7979>.
-4. Navigate to <http://localhost:7979/settings> to configure your Radarr/Sonarr URLs and API keys directly in the browser.
+- 🎭 **Mockbuster Knock-offs**: Studios like *The Asylum* release low-budget titles mimicking blockbusters. An 86-minute B-movie gets imported in place of a 170-minute theatrical epic simply because the year and title collide.
+- 📦 **Fake Releases & Malware**: Torrents packed with `.zip`, `.7z`, `.rar`, `.exe`, or `.iso` password traps rather than playable media.
+- 🔄 **Loop & Freeze Scams**: Bogus uploads looping a 10-second trailer or frozen frame to fake the file size.
+- 🔇 **Mismatched Audio**: Releases advertising 7.1 Atmos or original language tracks that only contain low-quality stereo or foreign dubs.
 
-### Windows Portable Archive (`.zip`)
-If you prefer not to use the installer:
-1. Download **`Verifyarr-windows-x64.zip`** and extract to `C:\Verifyarr`.
-2. Right-click `install-service.bat` and select **Run as Administrator** to register the service via NSSM.
-3. To run manually in a console window instead, run `run-standalone.bat`.
-4. To remove the service later, run `uninstall-service.bat` as Administrator.
+**Verifyarr acts as an automated bouncer with two defense layers:**
+1. **Pre-Download Shield (On Grab)**: Inspects the torrent manifest in **qBittorrent** and purges archives and executable payloads *before wasting bandwidth or disk space*.
+2. **Post-Import Deep Verification (On Import / Upgrade)**: Validates container runtime deltas, audio stream languages/channels, and video freeze patterns using `ffprobe`/`ffmpeg`.
 
-### Running from Source (Developers)
-```powershell
-git clone https://github.com/camezaro-intc/Verifyarr.git C:\verifyarr
-cd C:\verifyarr
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-Copy-Item config.example.yaml config.yaml
-.\.venv\Scripts\python.exe -m src.main
+---
+
+## ⚡ How It Works
+
+```mermaid
+flowchart TD
+    subgraph PHASE1["1. Pre-Download Shield (On Grab)"]
+        R["Radarr / Sonarr"] -->|Webhook| T0["Tier 0: Torrent Manifest Inspection"]
+        T0 -->|Archive / Executable (.zip, .exe, .rar)| P0["🚫 Purge Torrent & Auto Re-Search"]
+        T0 -->|Clean Video Stream| Q["qBittorrent Downloads Media"]
+    end
+
+    subgraph PHASE2["2. Post-Import Verification (On Import / Upgrade)"]
+        Q -->|Download Completed| R2["Servarr Imports Media"]
+        R2 -->|Webhook| V["Verifyarr Analysis Pipeline"]
+        
+        V --> T1{"Tier 1: Runtime Delta"}
+        T1 -->|Runtime Mismatch > 15m| REM["❌ Remediation"]
+        T1 -->|Runtime Matched| T2{"Tier 2: Stream & Audio Sanity"}
+        
+        T2 -->|Language or Channel Mismatch| REM
+        T2 -->|Audio Verified| T3{"Tier 3: Freeze Detection & OCR"}
+        
+        T3 -->|Looped Frames / Mockbuster Credits| REM
+        T3 -->|All Checks Passed| J["✅ Refresh Jellyfin Library"]
+    end
+
+    subgraph PHASE3["3. Remediation Modes"]
+        REM -->|Live Mode| ACT1["Delete File + Blocklist Release + Trigger Auto-Search"]
+        REM -->|Dry-Run Mode (Default)| ACT2["Log Warning + Discord Alert (Safe Audit)"]
+    end
 ```
 
 ---
 
-## Quick start: Docker Compose
+## ✨ Features at a Glance
 
-1. Create a folder for Verifyarr and download `docker-compose.yml` and `config.example.yaml` from this repository.
-2. Initialize your configuration and data directory:
-
-   ```bash
-   cp config.example.yaml config.yaml
-   mkdir -p data
-   ```
-
-3. Configure your media mounts and Servarr connections in `docker-compose.yml`:
-
-   ```yaml
-   services:
-     verifyarr:
-       image: ghcr.io/camezaro-intc/verifyarr:latest
-       container_name: verifyarr
-       restart: unless-stopped
-       user: "1000:1000"                  # must be able to READ your media
-       environment:
-         TZ: "UTC"
-       ports:
-         - "7979:7979"
-       volumes:
-         - ./config.yaml:/app/config.yaml # mounted rw if you use the /settings web UI
-         - ./data:/app/data               # verification history (SQLite)
-         - /path/to/media:/media:ro       # Windows host: "E:/Temp_Flex_Media:/media:ro"
-       extra_hosts:
-         - "host.docker.internal:host-gateway"
-       networks:
-         - servarr
-
-   networks:
-     servarr:
-       driver: bridge
-   ```
-
-4. Start Verifyarr and open the dashboard:
-
-   ```bash
-   docker compose up -d
-   docker compose logs -f verifyarr
-   # Browse to http://localhost:7979
-   ```
+| Feature | What It Does |
+|---|---|
+| 🛡️ **Tier 0 Pre-Download Shield** | Intercepts qBittorrent downloads upon grab. Automatically purges `.zip`, `.7z`, `.exe`, `.iso`, and zero-video releases. |
+| ⏱️ **Runtime Delta Guard** | Compares `ffprobe` duration against TMDB/TVDB expected runtimes. Multi-episode files are automatically scaled. |
+| 🔊 **Audio & Channel Sanity** | Confirms at least one audio stream matches original language, and verifies advertised Atmos / 7.1 releases aren't secretly stereo. |
+| ❄️ **Freeze & Loop Detection** | Runs `ffmpeg freezedetect` on a 3-minute sample window to catch static frames and loop scams. |
+| 🔍 **Correlated Pipeline Trace** | Multi-service diagnostic console correlating logs across **Verifyarr**, **qBittorrent**, **Servarr**, and **Jellyfin** with 1-click source filtering and iOS touch support. |
+| 🔄 **1-Click Automated Updates** | Update the background service directly from the browser in ~2 seconds with zero downtime. |
+| 📱 **Responsive Modern Dashboard** | Mobile-optimized interface with quick **Force Approve** whitelisting for director's cuts and extended editions. |
+| 🧪 **Safe Dry-Run by Default** | Verifies and logs everything safely without deleting or blocklisting until you are ready to enable live remediation. |
 
 ---
 
-## Quick start: Linux (systemd & portable tarball)
+## 📸 Screenshots
 
-1. Download **`Verifyarr-linux-x64.tar.gz`** from the [Latest GitHub Release](https://github.com/camezaro-intc/Verifyarr/releases/latest).
-2. Extract to `/opt/verifyarr`:
+<p align="center">
+  <img src="assets/dashboard-preview.png" alt="Verifyarr Dashboard" width="85%" />
+</p>
 
+<p align="center">
+  <em>Real-time verification dashboard showing recent media inspections, check breakdowns, and health status.</em>
+</p>
+
+<details>
+<summary>🔍 <strong>View Correlated Pipeline Trace & Mobile Experience</strong></summary>
+<br />
+<p align="center">
+  <img src="assets/pipeline-trace.png" alt="Correlated Pipeline Trace Terminal" width="85%" />
+  <br />
+  <em>Unified multi-app diagnostic console correlating logs across Verifyarr, qBittorrent, Sonarr/Radarr, and Jellyfin.</em>
+</p>
+<p align="center">
+  <img src="assets/mobile-preview.png" alt="Mobile Dashboard" width="45%" />
+  <br />
+  <em>Touch-friendly mobile card view with 1-click Force Approve and instant trace modals.</em>
+</p>
+</details>
+
+---
+
+## 🚀 Quick Start
+
+### 1. Windows (1-Click Installer) — *Recommended*
+
+1. Download **`Verifyarr-windows-x64-Setup.exe`** from [Latest Releases](https://github.com/camezaro-intc/Verifyarr/releases/latest).
+2. Run the installer (Administrator). It sets up `C:\Verifyarr`, configures the background Windows service, and launches the app.
+3. Open **`http://localhost:7979`** in your browser.
+
+*(Portable `.zip` with `install-service.bat` and `run-standalone.bat` is also available).*
+
+### 2. Docker Compose
+
+```yaml
+services:
+  verifyarr:
+    image: ghcr.io/camezaro-intc/verifyarr:latest
+    container_name: verifyarr
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "7979:7979"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+      - /path/to/media:/media:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Start the container:
+```bash
+docker compose up -d
+```
+
+### 3. Linux Portable (systemd)
+
+1. Download **`Verifyarr-linux-x64.tar.gz`** from [Latest Releases](https://github.com/camezaro-intc/Verifyarr/releases/latest).
+2. Extract and enable the systemd service:
    ```bash
-   sudo mkdir -p /opt/verifyarr
    sudo tar -xzvf Verifyarr-linux-x64.tar.gz -C /opt/
-   cd /opt/verifyarr
-   sudo cp config.example.yaml config.yaml
-   ```
-
-3. Install the included systemd service unit:
-
-   ```bash
-   sudo cp scripts/systemd/verifyarr.service /etc/systemd/system/
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now verifyarr
-   ```
-
-4. Check service status:
-
-   ```bash
-   sudo systemctl status verifyarr
-   # Open http://localhost:7979 in your browser
+   sudo cp /opt/verifyarr/scripts/systemd/verifyarr.service /etc/systemd/system/
+   sudo systemctl daemon-reload && sudo systemctl enable --now verifyarr
    ```
 
 ---
 
-## Web Settings Management
+## 🔗 Connect Radarr & Sonarr (3 Steps)
 
-Verifyarr includes an Arr-style web settings interface at <http://localhost:7979/settings>:
-
-- **Verification Engine**: Toggle Dry-Run mode, customize runtime delta tolerance (minutes), concurrency limits, and probe timeouts.
-- **Analysis Tiers**: Enable/disable audio language/channel sanity checks, freeze-frame loop detection, and OCR mockbuster blacklist keywords.
-- **Integrations**: Configure Radarr, Sonarr, and Jellyfin connections with inline "Test Connection" validation buttons and show/hide API key toggles.
-- **Notifications**: Discord webhook integration for instant failure and error notifications.
-- **System & Binaries**: Customize `ffprobe`, `ffmpeg`, and `tesseract` paths, and manage path mappings (`From` -> `To`) dynamically.
-- **Software Updates**: Check for newer releases directly against GitHub, view detailed Markdown changelogs, and perform 1-click self-updates with automated service recycling and health reconnection.
-- **Hot Reloading**: Changes submitted via "Save Changes" are persisted atomically to `config.yaml` and hot-reloaded into memory immediately without restarting the service.
+1. In Radarr and Sonarr, go to **Settings** > **Connect** > click **+ (Add Connection)** > **Webhook**.
+2. Configure the webhook:
+   - **Name**: `Verifyarr`
+   - **Triggers**: Tick **On Download** / **On File Import**, **On Upgrade**, and **On Grab** (for Tier 0 pre-download inspection).
+   - **URL**: `http://localhost:7979/api/v1/webhook` *(or `http://verifyarr:7979/api/v1/webhook` in Docker)*
+   - **Method**: `POST`
+3. Click **Test** and **Save**. Your library is now guarded!
 
 ---
 
-## Radarr & Sonarr setup
+<details>
+<summary>⚙️ <strong>Configuration Reference (config.yaml)</strong></summary>
 
-Configure webhooks in **Radarr**, and repeat in **Sonarr**:
-
-1. Open Radarr/Sonarr in your browser and click **Settings** > **Connect**.
-2. Click the **+** (Add Connection) tile and select **Webhook**.
-3. Fill in the connection form:
-   - **Name:** `Verifyarr`
-   - **Notification Triggers:**
-     - Tick **On Download** and **On Upgrade** (newer versions label these **On File Import** and **On File Upgrade**).
-     - Tick **On Grab** if you use qBittorrent and want **Tier 0 Pre-Download Inspection** (instantly purges archives, `.exe`, and zero-video fake releases before bytes download).
-     - Leave **On Rename** unticked.
-   - **URL:** `http://localhost:7979/api/v1/webhook` (or `http://verifyarr:7979/api/v1/webhook` if using Docker container names).
-   - **Method:** `POST`
-4. Click **Test**. Verifyarr will return HTTP 200 with `{"status": "ok", "message": "Verifyarr webhook test successful"}`.
-5. Click **Save**.
-
-Import or re-import a movie/episode to observe real-time verification on the dashboard at <http://localhost:7979>.
-
----
-
-## Configuration reference
-
-Settings can be edited via the [Web UI](#web-settings-management) or in `config.yaml`. Environment variables use the `VERIFYARR_` prefix with `__` for nested keys (e.g. `VERIFYARR_RADARR__API_KEY=...`).
+Verifyarr can be configured through the web interface at `http://localhost:7979/settings` or by editing `config.yaml`. Environment variables use the `VERIFYARR_` prefix (e.g. `VERIFYARR_RADARR__API_KEY=...`).
 
 ### `server`
 | Key | Default | Description |
 |-----|---------|-------------|
 | `server.host` | `"0.0.0.0"` | Interface to listen on. |
-| `server.port` | `7979` | HTTP port for the webhook, dashboard, and settings UI. |
-| `server.log_level` | `"info"` | Logging verbosity: `info`, `debug`, `warning`, `error`. |
+| `server.port` | `7979` | HTTP port for webhook, dashboard, and settings UI. |
+| `server.log_level` | `"info"` | Logging level: `info`, `debug`, `warning`, `error`. |
 
 ### `verification`
 | Key | Default | Description |
 |-----|---------|-------------|
-| `verification.dry_run` | `true` | When `true`, verifications are recorded as `DRY_RUN` without deleting/blocklisting files. |
-| `verification.max_concurrent_probes` | `2` | Maximum concurrent ffmpeg/ffprobe processes to protect disk I/O. |
-| `verification.runtime_delta_threshold_minutes` | `15` | Tier 1: Max allowed difference between probed and expected duration (minutes). |
-| `verification.enable_audio_sanity_check` | `true` | Tier 2: Validates audio language and channel layout against advertised metadata. |
-| `verification.enable_freeze_detection` | `true` | Tier 3A: Scans sample window for frozen/loop frame traps using ffmpeg. |
-| `verification.freeze_threshold_percent` | `30` | Maximum allowable static percentage in sample window before rejection. |
-| `verification.enable_ocr_credit_check` | `false` | Tier 3B: Uses Tesseract OCR to flag mockbuster studios in opening/closing credits. |
-| `verification.mockbuster_keywords` | `["The Asylum", "Asylum Presents", "Syfy Channel"]` | Blacklisted keywords flagged during OCR scanning. |
-
-### `radarr`, `sonarr`, `jellyfin`
-| Key | Default | Description |
-|-----|---------|-------------|
-| `radarr.enabled` | `true` | Process Radarr webhooks and enable Radarr v3 API remediation. |
-| `radarr.url` | `"http://localhost:7878"` | Base URL of Radarr. |
-| `radarr.api_key` | `""` | Radarr API key. |
-| `sonarr.enabled` | `false` | Process Sonarr webhooks and enable Sonarr v3 API remediation. |
-| `sonarr.url` | `"http://localhost:8989"` | Base URL of Sonarr. |
-| `sonarr.api_key` | `""` | Sonarr API key. |
-| `jellyfin.enabled` | `false` | Trigger a debounced library scan when imports pass verification. |
-| `jellyfin.url` | `"http://localhost:8096"` | Base URL of Jellyfin. |
-| `jellyfin.api_key` | `""` | Jellyfin API token. |
+| `verification.dry_run` | `true` | Safe audit mode. Set to `false` to enable automatic deletion and blocklisting. |
+| `verification.max_concurrent_probes` | `2` | Maximum concurrent ffmpeg/ffprobe tasks to prevent disk I/O saturation. |
+| `verification.runtime_delta_threshold_minutes` | `15` | Maximum allowable difference between probed and expected duration (minutes). |
+| `verification.enable_audio_sanity_check` | `true` | Validates audio stream language and channel layout against advertised metadata. |
+| `verification.enable_freeze_detection` | `true` | Scans sample window for frozen or loop frame traps using ffmpeg. |
+| `verification.freeze_threshold_percent` | `30` | Maximum allowable frozen percentage in sample window. |
+| `verification.enable_ocr_credit_check` | `false` | Uses Tesseract OCR to scan credits for mockbuster studio keywords. |
+| `verification.mockbuster_keywords` | `["The Asylum", "Asylum Presents", "Syfy Channel"]` | Keywords flagged during OCR scanning. |
 
 ### `qbittorrent`
 | Key | Default | Description |
 |-----|---------|-------------|
 | `qbittorrent.enabled` | `false` | Enable Tier 0 pre-download torrent inspection. |
-| `qbittorrent.url` | `"http://localhost:8080"` | Base URL of the qBittorrent Web UI. |
-| `qbittorrent.username` | `"admin"` | Username for qBittorrent Web API authentication. |
-| `qbittorrent.password` | `""` | Password for qBittorrent Web API. |
-| `qbittorrent.inspect_on_grab` | `true` | Intercept Servarr **On Grab** webhooks to inspect new torrent contents. |
-| `qbittorrent.metadata_timeout_seconds` | `30` | Maximum wait time for torrent file tree manifest to resolve from peers. |
-| `qbittorrent.blocked_extensions` | `[".7z", ".zip", ".rar", ".exe", ".iso", ".bat"]` | Blacklisted file extensions that trigger immediate purge and Servarr blocklisting. |
+| `qbittorrent.url` | `"http://localhost:8080"` | Base URL of qBittorrent Web UI. |
+| `qbittorrent.username` | `"admin"` | Web API username. |
+| `qbittorrent.password` | `""` | Web API password. |
+| `qbittorrent.inspect_on_grab` | `true` | Intercept Servarr **On Grab** webhooks to verify torrent file manifests. |
+| `qbittorrent.metadata_timeout_seconds` | `30` | Timeout waiting for torrent metadata resolution from peers. |
+| `qbittorrent.blocked_extensions` | `[".7z", ".zip", ".rar", ".exe", ".iso", ".bat"]` | Blacklisted extensions triggering immediate purge and Servarr blocklisting. |
 
-### `binaries`
+### `radarr`, `sonarr`, `jellyfin`
 | Key | Default | Description |
 |-----|---------|-------------|
-| `binaries.ffmpeg_path` | `""` | Path to `ffmpeg` executable (leave empty for automatic detection). |
-| `binaries.ffprobe_path` | `""` | Path to `ffprobe` executable (leave empty for automatic detection). |
-| `binaries.tesseract_path` | `""` | Path to `tesseract` executable (leave empty for automatic detection). |
+| `radarr.enabled` | `true` | Process Radarr webhooks and enable automatic remediation. |
+| `radarr.url` | `"http://localhost:7878"` | Base URL of Radarr. |
+| `radarr.api_key` | `""` | Radarr API key. |
+| `sonarr.enabled` | `false` | Process Sonarr webhooks and enable automatic remediation. |
+| `sonarr.url` | `"http://localhost:8989"` | Base URL of Sonarr. |
+| `sonarr.api_key` | `""` | Sonarr API key. |
+| `jellyfin.enabled` | `false` | Trigger a debounced library refresh when verifications pass. |
+| `jellyfin.url` | `"http://localhost:8096"` | Base URL of Jellyfin. |
+| `jellyfin.api_key` | `""` | Jellyfin API token. |
+
+</details>
+
+<details>
+<summary>📡 <strong>REST API Endpoints</strong></summary>
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Responsive Web Dashboard |
+| `GET` | `/settings` | Settings Management Interface |
+| `POST` | `/api/v1/webhook` | Ingest Radarr/Sonarr Webhooks |
+| `POST` | `/api/v1/whitelist/{item_id}` | Force-approve a false positive and refresh Jellyfin |
+| `GET` | `/api/v1/history/{item_id}/correlated-logs` | Fetch correlated multi-service trace logs |
+| `GET` | `/api/v1/system/version` | Lightweight local version probe |
+| `GET` | `/api/v1/system/update/check` | Check GitHub for new releases |
+| `POST` | `/api/v1/system/update/apply` | Stage and trigger 1-click self-update |
+| `GET` | `/health` | Health and operational mode status probe |
+
+</details>
+
+<details>
+<summary>🛠️ <strong>Development & Running from Source</strong></summary>
+
+```powershell
+git clone https://github.com/camezaro-intc/Verifyarr.git
+cd Verifyarr
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m src.main
+```
+
+Run tests and type checks:
+```powershell
+pytest
+ruff check .
+mypy src
+```
+
+</details>
 
 ---
 
-## How results work
+## 📄 License & Contributing
 
-| Result | Meaning |
-|--------|---------|
-| `PASSED` | All checks passed. A Jellyfin refresh is requested (coalesced for season packs). |
-| `DRY_RUN` | Checks failed but `dry_run` is on, so the file was kept and nothing was blocklisted. |
-| `REJECTED` | Post-import checks failed in live mode: the file was deleted, the release blocklisted, and a replacement search triggered. |
-| `REJECTED_PRE_DOWNLOAD` | Tier 0 check failed: torrent contained blacklisted archives/executables or zero video containers. Purged from qBittorrent, removed from the Servarr queue, blocklisted, and a replacement search triggered before downloading to disk. |
-| `ERROR` | File could not be verified (file not found, `ffprobe` failure). Never remediated automatically. |
-
-**Force Approve**: Click to whitelist any false positive (e.g. extended cuts). Whitelisted releases bypass future verification and trigger a Jellyfin library scan.
-
----
-
-## API
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/` | Web dashboard displaying recent verifications |
-| `GET` | `/settings` | Interactive tabbed settings management interface |
-| `GET` | `/api/v1/settings` | Retrieve active configuration as JSON |
-| `POST` | `/api/v1/settings` | Save settings atomically to disk and hot-reload in memory |
-| `POST` | `/api/v1/settings/test-connection` | Test credentials against Radarr, Sonarr, or Jellyfin |
-| `POST` | `/api/v1/settings/test-qbittorrent` | Test authentication against qBittorrent Web API |
-| `POST` | `/api/v1/settings/auto-detect-binaries` | Auto-detect installed paths for `ffprobe`, `ffmpeg`, and `tesseract` |
-| `GET` | `/api/v1/settings/browse-fs` | Server-side filesystem navigator restricted to specific binaries |
-| `POST` | `/api/v1/webhook` | Servarr webhook ingestion endpoint |
-| `POST` | `/api/v1/whitelist/{item_id}` | Force-approve a rejected release and refresh Jellyfin |
-| `GET` | `/api/v1/history/{item_id}/correlated-logs` | Fetch correlated pipeline trace logs across Verifyarr, qBittorrent, Servarr, and Jellyfin |
-| `GET` | `/api/v1/system/update/check` | Check GitHub Releases API for newer versions and changelogs |
-| `POST` | `/api/v1/system/update/apply` | Download latest release, stage files, and trigger background self-update |
-| `GET` | `/health` | Application health and mode status probe |
-
----
-
-## Contributing, security and license
-
-- Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-- Report security issues privately as described in [SECURITY.md](SECURITY.md).
 - Distributed under the [MIT License](LICENSE).
+- Bug reports, feature suggestions, and pull requests are warmly welcomed! See [CONTRIBUTING.md](CONTRIBUTING.md).

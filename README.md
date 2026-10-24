@@ -35,29 +35,29 @@ Radarr and Sonarr automate downloads based on **release titles and tracker metad
 ```mermaid
 flowchart TD
     subgraph PHASE1["1. Pre-Download Shield (On Grab)"]
-        R["Radarr / Sonarr"] -->|Webhook| T0["Tier 0: Torrent Manifest Inspection"]
-        T0 -->|Archive / Executable (.zip, .exe, .rar)| P0["🚫 Purge Torrent & Auto Re-Search"]
-        T0 -->|Clean Video Stream| Q["qBittorrent Downloads Media"]
+        R["Radarr / Sonarr"] -->|"Webhook: On Grab"| T0["Tier 0: Torrent Manifest Inspection"]
+        T0 -->|"Contains .zip, .exe, .rar or zero video"| P0["🚫 Purge Torrent & Auto Re-Search"]
+        T0 -->|"Clean Video Stream"| Q["qBittorrent Downloads Media"]
     end
 
     subgraph PHASE2["2. Post-Import Verification (On Import / Upgrade)"]
-        Q -->|Download Completed| R2["Servarr Imports Media"]
-        R2 -->|Webhook| V["Verifyarr Analysis Pipeline"]
+        Q -->|"Download Completed"| R2["Servarr Imports Media"]
+        R2 -->|"Webhook: On Import"| V["Verifyarr Analysis Pipeline"]
         
         V --> T1{"Tier 1: Runtime Delta"}
-        T1 -->|Runtime Mismatch > 15m| REM["❌ Remediation"]
-        T1 -->|Runtime Matched| T2{"Tier 2: Stream & Audio Sanity"}
+        T1 -->|"Runtime Mismatch > 15m"| REM["❌ Remediation"]
+        T1 -->|"Runtime Matched"| T2{"Tier 2: Stream & Audio Sanity"}
         
-        T2 -->|Language or Channel Mismatch| REM
-        T2 -->|Audio Verified| T3{"Tier 3: Freeze Detection & OCR"}
+        T2 -->|"Language or Channel Mismatch"| REM
+        T2 -->|"Audio Verified"| T3{"Tier 3: Freeze Detection & OCR"}
         
-        T3 -->|Looped Frames / Mockbuster Credits| REM
-        T3 -->|All Checks Passed| J["✅ Refresh Jellyfin Library"]
+        T3 -->|"Looped Frames or Mockbuster Credits"| REM
+        T3 -->|"All Checks Passed"| J["✅ Refresh Jellyfin Library"]
     end
 
     subgraph PHASE3["3. Remediation Modes"]
-        REM -->|Live Mode| ACT1["Delete File + Blocklist Release + Trigger Auto-Search"]
-        REM -->|Dry-Run Mode (Default)| ACT2["Log Warning + Discord Alert (Safe Audit)"]
+        REM -->|"Live Mode"| ACT1["Delete File + Blocklist Release + Trigger Auto-Search"]
+        REM -->|"Dry-Run Mode (Default)"| ACT2["Log Warning + Discord Alert (Safe Audit)"]
     end
 ```
 
@@ -81,26 +81,43 @@ flowchart TD
 ## 📸 Screenshots
 
 <p align="center">
-  <img src="assets/dashboard-preview.png" alt="Verifyarr Dashboard" width="85%" />
+  <img src="assets/main.png" alt="Verifyarr Dashboard" width="95%" />
 </p>
 
 <p align="center">
-  <em>Real-time verification dashboard showing recent media inspections, check breakdowns, and health status.</em>
+  <em>Real-time verification dashboard displaying recent inspections, runtime deltas, verification badges, and system status.</em>
 </p>
 
 <details>
-<summary>🔍 <strong>View Correlated Pipeline Trace & Mobile Experience</strong></summary>
+<summary>🔍 <strong>View Pipeline Trace, Mobile UI & Settings Gallery</strong></summary>
 <br />
+
+### Correlated Multi-Service Pipeline Trace
 <p align="center">
-  <img src="assets/pipeline-trace.png" alt="Correlated Pipeline Trace Terminal" width="85%" />
+  <img src="assets/pipeline.png" alt="Correlated Pipeline Trace Terminal" width="80%" />
   <br />
-  <em>Unified multi-app diagnostic console correlating logs across Verifyarr, qBittorrent, Sonarr/Radarr, and Jellyfin.</em>
+  <em>Unified multi-app diagnostic console correlating timestamped events across Verifyarr, qBittorrent, Sonarr/Radarr, and Jellyfin.</em>
+</p>
+
+### Responsive Mobile Experience
+<p align="center">
+  <img src="assets/mobile.jpg" alt="Mobile Dashboard View" width="40%" />
+  <br />
+  <em>Touch-optimized mobile card layout with instant Force Approve and one-tap Pipeline Trace inspection.</em>
+</p>
+
+### Analysis Tiers & Integrations Management
+<p align="center">
+  <img src="assets/tiers.png" alt="Analysis Tiers Settings" width="75%" />
+  <br />
+  <em>Granular verification thresholds, audio sanity toggles, and OCR mockbuster keyword rules.</em>
 </p>
 <p align="center">
-  <img src="assets/mobile-preview.png" alt="Mobile Dashboard" width="45%" />
+  <img src="assets/integrations.png" alt="Integrations Settings" width="75%" />
   <br />
-  <em>Touch-friendly mobile card view with 1-click Force Approve and instant trace modals.</em>
+  <em>Arr-style connection management with 1-click credential validation for Radarr, Sonarr, Jellyfin, and qBittorrent.</em>
 </p>
+
 </details>
 
 ---

@@ -251,23 +251,26 @@ if ($items.Count -eq 1 -and $items[0].PSIsContainer) {{
     Log-Update "Un-nested staging folder: $staging"
 }}
 
-# 2. Stop Verifyarr Windows service cleanly via ServiceController and NSSM
+# 2. Stop Verifyarr Windows service cleanly via ServiceController and NSSM fallback
 $nssm = Join-Path $target "nssm.exe"
 $svc = Get-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
 if ($svc) {{
     Log-Update "Verifyarr service detected (Status: $($svc.Status)). Stopping service..."
-    if (Test-Path $nssm) {{
+    Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
+    $maxWait = 30
+    while ($maxWait -gt 0) {{
+        $svc.Refresh()
+        if ($svc.Status -eq 'Stopped') {{ break }}
+        Start-Sleep -Seconds 1
+        $maxWait--
+    }}
+    if ($svc.Status -ne 'Stopped' -and (Test-Path $nssm)) {{
+        Log-Update "Service stop pending; invoking NSSM stop fallback..."
         & $nssm stop Verifyarr 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        $svc.Refresh()
     }}
-    if ($svc.Status -ne 'Stopped') {{
-        Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
-        try {{
-            $svc.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
-            Log-Update "Verifyarr service stopped successfully."
-        }} catch {{
-            Log-Update "Wait for service stop timed out ($($svc.Status))."
-        }}
-    }}
+    Log-Update "Verifyarr service stop completed (Status: $($svc.Status))."
 }} else {{
     Log-Update "No Verifyarr service found. Proceeding with process termination."
 }}
@@ -317,16 +320,21 @@ if ($rc -ge 8) {{
 # 6. Restart Windows service or launch standalone application
 if ($svc) {{
     Log-Update "Restarting Verifyarr Windows service..."
-    if (Test-Path $nssm) {{
-        & $nssm start Verifyarr 2>&1 | Out-Null
-    }}
     Start-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
-    try {{
-        $svc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
-        Log-Update "Verifyarr service is now Running."
-    }} catch {{
-        Log-Update "Wait for service start timed out (Status: $($svc.Status))."
+    $maxWait = 30
+    while ($maxWait -gt 0) {{
+        $svc.Refresh()
+        if ($svc.Status -eq 'Running') {{ break }}
+        Start-Sleep -Seconds 1
+        $maxWait--
     }}
+    if ($svc.Status -ne 'Running' -and (Test-Path $nssm)) {{
+        Log-Update "Service start pending; invoking NSSM start fallback..."
+        & $nssm start Verifyarr 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+        $svc.Refresh()
+    }}
+    Log-Update "Verifyarr service is now Running (Status: $($svc.Status))."
 }} else {{
     $targetExe = Join-Path $target "verifyarr.exe"
     if (Test-Path $targetExe) {{
@@ -345,31 +353,59 @@ Log-Update "Update completed successfully."
         with open(updater_script, "w", encoding="utf-8") as f:
             f.write(ps_content)
 
-        # 5. Spawn updater.ps1 with attached log output handle and process group breakaway
+        # 5. Spawn updater.ps1 decoupled from current process tree via WMI (or Popen fallback)
         logs_dir = target_dir / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         log_file_path = logs_dir / "updater.log"
-
-        creationflags = (
-            subprocess.CREATE_BREAKAWAY_FROM_JOB
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-        ) if os.name == "nt" else 0
 
         ps_exe = (
             shutil.which("powershell.exe")
             or r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
         )
-        ps_cmd = [
-            ps_exe,
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(updater_script),
-        ]
-        logger.info("Spawning updater process: %s", updater_script)
-        try:
-            with open(log_file_path, "a", encoding="utf-8") as lf:
+
+        spawned_via_wmi = False
+        if (
+            os.name == "nt"
+            and not os.getenv("VERIFYARR_TEST_NO_EXIT")
+            and not os.getenv("PYTEST_CURRENT_TEST")
+        ):
+            try:
+                cmd_line = f'"{ps_exe}" -NoProfile -ExecutionPolicy Bypass -File "{updater_script}"'
+                wmi_script = (
+                    f"$null = Invoke-CimMethod -ClassName Win32_Process -MethodName Create "
+                    f"-Arguments @{{CommandLine='{cmd_line}'}}"
+                )
+                res = subprocess.run(
+                    [ps_exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", wmi_script],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if res.returncode == 0:
+                    spawned_via_wmi = True
+                    logger.info("Successfully launched updater process decoupled via WMI")
+            except Exception as wmi_err:
+                logger.warning(
+                    "WMI process decoupling failed (%s); falling back to direct Popen",
+                    wmi_err,
+                )
+
+        if not spawned_via_wmi:
+            creationflags = (
+                subprocess.CREATE_BREAKAWAY_FROM_JOB
+                | subprocess.CREATE_NEW_PROCESS_GROUP
+            ) if os.name == "nt" else 0
+            ps_cmd = [
+                ps_exe,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(updater_script),
+            ]
+            logger.info("Spawning updater process: %s", updater_script)
+            try:
+                lf = open(log_file_path, "a", encoding="utf-8")
                 subprocess.Popen(
                     ps_cmd,
                     creationflags=creationflags,
@@ -377,9 +413,9 @@ Log-Update "Update completed successfully."
                     stdout=lf,
                     stderr=subprocess.STDOUT,
                 )
-        except Exception as exc:
-            logger.error("Failed to spawn updater process: %s", exc)
-            raise
+            except Exception as exc:
+                logger.error("Failed to spawn updater process: %s", exc)
+                raise
 
         # 6. Service lifecycle management is delegated entirely to updater.ps1
         # (matching Sonarr/Radarr's external updater lifecycle to prevent NSSM crash-restart loops)

@@ -265,3 +265,46 @@ def test_apply_update_delegates_service_lifecycle(
         # Verify os._exit is NOT called prematurely (preventing NSSM crash-restart loops)
         assert not mock_exit.called
 
+
+def test_apply_update_wmi_decoupling(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    install_dir = tmp_path / "Verifyarr"
+    temp_dir = install_dir / "temp"
+    install_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setenv("VERIFYARR_INSTALL_DIR", str(install_dir))
+    monkeypatch.setenv("VERIFYARR_TEMP_DIR", str(temp_dir))
+    monkeypatch.delenv("VERIFYARR_TEST_NO_EXIT", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setattr(os, "name", "nt")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w") as zf:
+        zf.writestr("test_file.txt", "updated contents")
+    zip_bytes = zip_buffer.getvalue()
+
+    def mock_get(url: str, *args, **kwargs) -> httpx.Response:
+        return httpx.Response(200, content=zip_bytes, request=httpx.Request("GET", url))
+
+    import subprocess
+
+    mock_run_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+    with (
+        patch("httpx.Client.get", side_effect=mock_get),
+        patch("subprocess.run", return_value=mock_run_result) as mock_run,
+        patch("subprocess.Popen") as mock_popen,
+    ):
+        manager = UpdateManager(current_version="1.5.6")
+        manager.apply_update("https://example.com/update.zip", exit_process=False)
+
+        assert mock_run.called
+        run_args, _ = mock_run.call_args
+        cmd_str = " ".join(str(a) for a in run_args[0])
+        assert "Invoke-CimMethod" in cmd_str
+        assert "Win32_Process" in cmd_str
+        # Direct Popen should not be needed if WMI succeeds
+        assert not mock_popen.called
+
+

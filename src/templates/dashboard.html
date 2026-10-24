@@ -285,6 +285,7 @@
       align-items: flex-end;
       justify-content: center;
       padding: 0;
+      touch-action: pan-y;
     }
     @media (min-width: 640px) {
       #correlated-logs-modal {
@@ -308,6 +309,7 @@
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
       overflow: hidden;
       min-height: 0;
+      touch-action: pan-y;
     }
     @media (min-width: 640px) {
       .trace-modal-card {
@@ -367,6 +369,8 @@
       -ms-overflow-style: none;
       padding: 2px 0 2px;
       margin-top: 10px;
+      flex-wrap: nowrap;
+      white-space: nowrap;
     }
     .trace-filter-bar::-webkit-scrollbar {
       display: none;
@@ -376,7 +380,7 @@
     #correlated-logs-terminal {
       flex: 1 1 0%;
       min-height: 0;
-      overflow-y: auto !important;
+      overflow-y: scroll !important;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch !important;
       touch-action: pan-y !important;
@@ -700,16 +704,12 @@
         {% endif %}
 
         <!-- Mobile Actions Area -->
-        <button type="button" class="btn-logs-all w-full mt-2 py-1.5 px-3 text-xs font-semibold rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 active:bg-indigo-500/30 flex items-center justify-center gap-1.5" data-id="{{ item.id }}" onclick="event.stopPropagation(); openCorrelatedLogs({{ item.id }})"><span>⚡</span> View Full Pipeline Trace (LOGS ALL)</button>
-
-        <!-- Force Approve button for Mobile -->
-        {% if item.can_force_approve %}
-        <div class="card-actions" style="margin-top: 8px; padding-top: 8px;">
-          <button type="button" onclick="forceApprove({{ item.id }}, this)"
-                  class="w-full"
-                  title="Whitelist this release (e.g. director's cut / extended edition)">Force Approve</button>
+        <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px;">
+          <button type="button" class="btn-logs-all" style="flex: 1; padding: 7px 10px; font-size: 12px; font-weight: 600; border-radius: 8px; background: rgba(99, 102, 241, 0.12); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer;" data-id="{{ item.id }}" onclick="event.stopPropagation(); openCorrelatedLogs({{ item.id }})"><span>⚡</span> Pipeline Trace</button>
+          {% if item.can_force_approve %}
+          <button type="button" onclick="forceApprove({{ item.id }}, this)" style="padding: 7px 12px; font-size: 12px; font-weight: 600; border-radius: 8px; background: rgba(255, 255, 255, 0.08); color: #e2e8f0; border: 1px solid #334155; cursor: pointer; white-space: nowrap;" title="Whitelist this release (e.g. director's cut / extended edition)">Force Approve</button>
+          {% endif %}
         </div>
-        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -744,7 +744,7 @@
               </div>
             </div>
             <!-- Clean circular close button in top right corner -->
-            <button type="button" onclick="closeCorrelatedLogs()" class="trace-close-btn" aria-label="Close modal">✕</button>
+            <button type="button" onclick="closeCorrelatedLogs()" class="trace-close-btn" aria-label="Close modal">&times;</button>
           </div>
 
           <!-- Horizontal scrolling filter pills bar with hidden scrollbar -->

@@ -207,7 +207,9 @@ def test_system_update_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             mock_apply.assert_called_once_with("https://example.com/asset.zip")
 
 
-def test_apply_update_terminates_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_update_delegates_service_lifecycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     install_dir = tmp_path / "Verifyarr"
     temp_dir = install_dir / "temp"
     install_dir.mkdir(parents=True, exist_ok=True)
@@ -227,13 +229,12 @@ def test_apply_update_terminates_process(tmp_path: Path, monkeypatch: pytest.Mon
     with (
         patch("httpx.Client.get", side_effect=mock_get),
         patch("subprocess.Popen") as mock_popen,
-        patch("time.sleep") as mock_sleep,
         patch("os._exit") as mock_exit,
     ):
         manager = UpdateManager(current_version="1.5.6")
         manager.apply_update("https://example.com/update.zip", exit_process=True)
 
         assert mock_popen.called
-        assert mock_sleep.called
-        mock_exit.assert_called_once_with(0)
+        # Verify os._exit is NOT called prematurely (preventing NSSM crash-restart loops)
+        assert not mock_exit.called
 

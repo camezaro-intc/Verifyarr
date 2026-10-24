@@ -7,7 +7,6 @@ import os
 import re
 import shutil
 import subprocess
-import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -155,37 +154,66 @@ class UpdateManager:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(staging_dir)
 
-        # 4. Write C:\Verifyarr\temp\updater.ps1 with atomic renaming and robocopy
-        ps_content = f"""# Verifyarr Updater Script
+        # 4. Write C:\Verifyarr\temp\updater.ps1 matching Sonarr/Radarr service update architecture
+        ps_content = f"""# Verifyarr Updater Script (Sonarr/Radarr Lifecycle Architecture)
 $ErrorActionPreference = 'Continue'
 $target = "{target_dir}"
+$staging = "{staging_dir}"
 $logsDir = Join-Path $target "logs"
 if (-not (Test-Path $logsDir)) {{
     New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
 }}
 $logFile = Join-Path $logsDir "updater.log"
-try {{
-    Start-Transcript -Path $logFile -Append -ErrorAction SilentlyContinue
-}} catch {{}}
 
-Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Starting update..."
+function Log-Update($msg) {{
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $line = "[$timestamp] [Verifyarr Updater] $msg"
+    Write-Output $line
+    try {{
+        Add-Content -Path $logFile -Value $line -Encoding utf8 -ErrorAction SilentlyContinue
+    }} catch {{}}
+}}
 
-$staging = "{staging_dir}"
+Log-Update "Starting self-update..."
+Log-Update "Target directory: $target"
+Log-Update "Staging directory: $staging"
+
+# 1. Un-nest staging directory if wrapped in a single root folder
 $items = Get-ChildItem -Path $staging
 if ($items.Count -eq 1 -and $items[0].PSIsContainer) {{
     $staging = $items[0].FullName
+    Log-Update "Un-nested staging folder: $staging"
 }}
 
-# 1. Stop service and terminate processes with verification loop
+# 2. Stop Verifyarr Windows service cleanly via ServiceController and NSSM
 $nssm = Join-Path $target "nssm.exe"
-if (Test-Path $nssm) {{
-    & $nssm stop Verifyarr 2>&1 | Out-Null
+$svc = Get-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
+if ($svc) {{
+    Log-Update "Verifyarr service detected (Status: $($svc.Status)). Stopping service..."
+    if (Test-Path $nssm) {{
+        & $nssm stop Verifyarr 2>&1 | Out-Null
+    }}
+    if ($svc.Status -ne 'Stopped') {{
+        Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
+        try {{
+            $svc.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+            Log-Update "Verifyarr service stopped successfully."
+        }} catch {{
+            Log-Update "Wait for service stop timed out ($($svc.Status))."
+        }}
+    }}
+}} else {{
+    Log-Update "No Verifyarr service found. Proceeding with process termination."
 }}
-Stop-Service -Name "Verifyarr" -Force -ErrorAction SilentlyContinue
-Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
 
-# Wait up to 5 seconds for verifyarr processes to release file handles
+# 3. Terminate any lingering verifyarr.exe processes
+$procs = Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue
+if ($procs) {{
+    Log-Update "Terminating lingering verifyarr processes..."
+    $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+}}
+
 $maxWait = 10
 while ((Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue) -and ($maxWait -gt 0)) {{
     Start-Sleep -Milliseconds 500
@@ -194,36 +222,24 @@ while ((Get-Process -Name "verifyarr" -ErrorAction SilentlyContinue) -and ($maxW
     $maxWait--
 }}
 
-# 2. Pre-rename verifyarr.exe and any destination dll/pyd files so paths are vacant
-$targetExe = Join-Path $target "verifyarr.exe"
-$oldExe = Join-Path $target "verifyarr.exe.old"
-if (Test-Path $targetExe) {{
-    Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
-    Rename-Item -Path $targetExe -NewName "verifyarr.exe.old" -Force -ErrorAction SilentlyContinue
-}}
+# 4. Remove any existing .old files
+Get-ChildItem -Path $target -Filter "*.old" -Recurse -Force -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
 
-if (Test-Path "$staging\\_internal") {{
-    Get-ChildItem -Path "$staging\\_internal" -Recurse |
-        Where-Object {{ -not $_.PSIsContainer }} | ForEach-Object {{
-            $rel = $_.FullName.Substring($staging.Length + 1)
-            $dest = Join-Path $target $rel
-            if (Test-Path $dest) {{
-                $destOld = $dest + ".old"
-                Remove-Item $destOld -Force -ErrorAction SilentlyContinue
-                Rename-Item -Path $dest -NewName ($_.Name + ".old") `
-                    -Force -ErrorAction SilentlyContinue
-            }}
-        }}
-}}
-
-# 3. Copy new files using robocopy with retries, excluding configs and service wrapper
+# 5. Mirror updated files into target using Robocopy
+Log-Update "Synchronizing updated files from staging to target..."
 $robocopyArgs = @(
-    $staging, $target, "/E", "/R:5", "/W:1",
+    $staging, $target, "/E", "/R:3", "/W:1",
     "/XF", "nssm.exe", "config.yaml", ".env",
     "/XD", "data", "logs", "temp", ".git"
 )
 & robocopy @robocopyArgs 2>&1 | Out-Null
-if ($LASTEXITCODE -ge 8) {{
+$rc = $LASTEXITCODE
+Log-Update "Robocopy exit code: $rc"
+
+# If robocopy failed (exit code >= 8), run fallback copy
+if ($rc -ge 8) {{
+    Log-Update "Robocopy reported errors ($rc). Executing Copy-Item fallback..."
     Get-ChildItem -Path $staging | ForEach-Object {{
         if (@("data", "config.yaml", ".env", "logs", "temp", "nssm.exe") -notcontains $_.Name) {{
             Copy-Item -Path $_.FullName -Destination $target -Recurse -Force `
@@ -232,25 +248,33 @@ if ($LASTEXITCODE -ge 8) {{
     }}
 }}
 
-# 4. Clean up .old files that were successfully freed
-Remove-Item -Path $oldExe -Force -ErrorAction SilentlyContinue
-Get-ChildItem -Path $target -Filter "*.old" -Recurse -Force -ErrorAction SilentlyContinue |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-
-# 5. Restart service
-if (Test-Path $nssm) {{
-    & $nssm start Verifyarr 2>&1 | Out-Null
+# 6. Restart Windows service or launch standalone application
+if ($svc) {{
+    Log-Update "Restarting Verifyarr Windows service..."
+    if (Test-Path $nssm) {{
+        & $nssm start Verifyarr 2>&1 | Out-Null
+    }}
+    Start-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
+    try {{
+        $svc.WaitForStatus('Running', [TimeSpan]::FromSeconds(30))
+        Log-Update "Verifyarr service is now Running."
+    }} catch {{
+        Log-Update "Wait for service start timed out (Status: $($svc.Status))."
+    }}
+}} else {{
+    $targetExe = Join-Path $target "verifyarr.exe"
+    if (Test-Path $targetExe) {{
+        Log-Update "Restarting standalone application: $targetExe"
+        Start-Process -FilePath $targetExe -WorkingDirectory $target
+    }}
 }}
-Start-Service -Name "Verifyarr" -ErrorAction SilentlyContinue
 
-# 6. Clean up staging & archive
-Remove-Item -Path "$staging" -Recurse -Force -ErrorAction SilentlyContinue
+# 7. Clean up staging & archive
+Log-Update "Cleaning up temporary staging directory and archive..."
+Remove-Item -Path $staging -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -Path "{zip_path}" -Force -ErrorAction SilentlyContinue
 
-Write-Output "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] Update finished."
-try {{
-    Stop-Transcript -ErrorAction SilentlyContinue
-}} catch {{}}
+Log-Update "Update completed successfully."
 """
         with open(updater_script, "w", encoding="utf-8") as f:
             f.write(ps_content)
@@ -283,8 +307,6 @@ try {{
             logger.error("Failed to spawn updater process: %s", exc)
             raise
 
-        # 6. Immediately call os._exit(0) to release file locks
-        if exit_process and os.getenv("VERIFYARR_TEST_NO_EXIT") != "1":
-            logger.info("Terminating process to release file locks for update")
-            time.sleep(0.5)
-            os._exit(0)
+        # 6. Service lifecycle management is delegated entirely to updater.ps1
+        # (matching Sonarr/Radarr's external updater lifecycle to prevent NSSM crash-restart loops)
+        logger.info("Update package extracted and updater script spawned successfully")

@@ -1729,7 +1729,7 @@
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 2500);
-          const checkRes = await fetch('/api/v1/system/update/check', {
+          const checkRes = await fetch('/api/v1/system/version', {
             cache: 'no-store',
             signal: controller.signal
           });
@@ -1737,7 +1737,7 @@
 
           if (checkRes.ok) {
             const data = await checkRes.json();
-            const newVersion = (data.current_version || '').trim();
+            const newVersion = (data.version || '').trim();
 
             // We consider the restart complete if:
             // 1. We observed the service go down and come back up, OR

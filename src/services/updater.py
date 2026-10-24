@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -43,13 +44,58 @@ class UpdateManager:
         self.current_version = current_version or self.CURRENT_VERSION
         self.repo_api_url = repo_api_url or self.REPO_API_URL
         self._http_client = http_client
+        self._cached_result: dict[str, Any] | None = None
+        self._cache_time: float = 0.0
 
-    async def check_for_updates(self) -> dict[str, Any]:
+    async def _check_web_redirect_fallback(
+        self, client: httpx.AsyncClient, headers: dict[str, str]
+    ) -> dict[str, Any] | None:
+        """Fallback to GitHub HTML release redirect when api.github.com is rate-limited."""
+        web_url = "https://github.com/camezaro-intc/Verifyarr/releases/latest"
+        try:
+            req_headers = {
+                "User-Agent": headers.get("User-Agent", f"Verifyarr/{self.current_version}")
+            }
+            fb_resp = await client.get(web_url, headers=req_headers, follow_redirects=False)
+            if fb_resp.status_code in (301, 302, 303, 307, 308):
+                loc = fb_resp.headers.get("location", "")
+                tag_name = loc.rstrip("/").split("/")[-1].lstrip("vV").strip()
+                if tag_name:
+                    curr_tuple = parse_semver(self.current_version)
+                    latest_tuple = parse_semver(tag_name)
+                    download_url = (
+                        f"https://github.com/camezaro-intc/Verifyarr/releases/download/"
+                        f"v{tag_name}/Verifyarr-windows-x64.zip"
+                    )
+                    return {
+                        "update_available": latest_tuple > curr_tuple,
+                        "current_version": self.current_version,
+                        "latest_version": tag_name,
+                        "release_url": loc,
+                        "changelog": f"Release v{tag_name}. See release page for notes.",
+                        "download_url": download_url,
+                    }
+        except Exception as exc:
+            logger.warning("GitHub web redirect fallback failed: %s", exc)
+        return None
+
+    async def check_for_updates(self, force: bool = False) -> dict[str, Any]:
         """Query GitHub API for the latest release, compare versions, and return update metadata."""
+        now = time.time()
+        if not force and self._cached_result and (now - self._cache_time) < 60.0:
+            return self._cached_result
+
+        github_token = (
+            os.getenv("GITHUB_TOKEN")
+            or os.getenv("GH_TOKEN")
+            or os.getenv("VERIFYARR_GITHUB_TOKEN")
+        )
         headers = {
             "User-Agent": f"Verifyarr/{self.current_version}",
             "Accept": "application/vnd.github.v3+json",
         }
+        if github_token and github_token.strip():
+            headers["Authorization"] = f"Bearer {github_token.strip()}"
 
         client_to_close: httpx.AsyncClient | None = None
         client = self._http_client
@@ -61,10 +107,15 @@ class UpdateManager:
             resp = await client.get(self.repo_api_url, headers=headers)
             if resp.status_code != 200:
                 logger.warning(
-                    "GitHub release check failed (status %d): %s",
+                    "GitHub release check API returned status %d; attempting web redirect fallback",
                     resp.status_code,
-                    resp.text[:200],
                 )
+                fallback = await self._check_web_redirect_fallback(client, headers)
+                if fallback:
+                    self._cached_result = fallback
+                    self._cache_time = now
+                    return fallback
+
                 return {
                     "update_available": False,
                     "current_version": self.current_version,
@@ -76,6 +127,12 @@ class UpdateManager:
 
             data = resp.json()
             if not isinstance(data, dict):
+                fallback = await self._check_web_redirect_fallback(client, headers)
+                if fallback:
+                    self._cached_result = fallback
+                    self._cache_time = now
+                    return fallback
+
                 return {
                     "update_available": False,
                     "current_version": self.current_version,
@@ -106,7 +163,7 @@ class UpdateManager:
             latest_tuple = parse_semver(tag_name)
             update_available = latest_tuple > curr_tuple
 
-            return {
+            result = {
                 "update_available": update_available,
                 "current_version": self.current_version,
                 "latest_version": tag_name,
@@ -114,8 +171,17 @@ class UpdateManager:
                 "changelog": body,
                 "download_url": download_url,
             }
+            self._cached_result = result
+            self._cache_time = now
+            return result
         except Exception as exc:
             logger.warning("Error checking for updates from %s: %s", self.repo_api_url, exc)
+            fallback = await self._check_web_redirect_fallback(client, headers)
+            if fallback:
+                self._cached_result = fallback
+                self._cache_time = now
+                return fallback
+
             return {
                 "update_available": False,
                 "current_version": self.current_version,
@@ -279,30 +345,38 @@ Log-Update "Update completed successfully."
         with open(updater_script, "w", encoding="utf-8") as f:
             f.write(ps_content)
 
-        # 5. Spawn updater.ps1 with DETACHED_PROCESS and CREATE_BREAKAWAY_FROM_JOB
+        # 5. Spawn updater.ps1 with attached log output handle and process group breakaway
+        logs_dir = target_dir / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_file_path = logs_dir / "updater.log"
+
         creationflags = (
             subprocess.CREATE_BREAKAWAY_FROM_JOB
             | subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
         ) if os.name == "nt" else 0
+
+        ps_exe = (
+            shutil.which("powershell.exe")
+            or r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+        )
         ps_cmd = [
-            "powershell.exe",
+            ps_exe,
             "-NoProfile",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
             str(updater_script),
         ]
-        logger.info("Spawning detached updater process: %s", updater_script)
+        logger.info("Spawning updater process: %s", updater_script)
         try:
-            subprocess.Popen(
-                ps_cmd,
-                creationflags=creationflags,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                close_fds=True,
-            )
+            with open(log_file_path, "a", encoding="utf-8") as lf:
+                subprocess.Popen(
+                    ps_cmd,
+                    creationflags=creationflags,
+                    stdin=subprocess.DEVNULL,
+                    stdout=lf,
+                    stderr=subprocess.STDOUT,
+                )
         except Exception as exc:
             logger.error("Failed to spawn updater process: %s", exc)
             raise

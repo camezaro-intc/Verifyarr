@@ -146,6 +146,14 @@ class UpdateApplyPayload(BaseModel):
     download_url: str
 
 
+@router.get("/version")
+def get_system_version() -> dict[str, str]:
+    """Return local active Verifyarr version without querying external GitHub API."""
+    from src import __version__
+
+    return {"version": __version__}
+
+
 @router.get("/update/check")
 async def check_update() -> dict[str, Any]:
     """Check GitHub releases for available Verifyarr updates."""

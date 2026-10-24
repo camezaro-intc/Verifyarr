@@ -112,10 +112,37 @@ async def test_check_for_updates_network_failure() -> None:
             repo_api_url="https://api.github.com/mock/releases/latest",
             http_client=client,
         )
-        result = await manager.check_for_updates()
+        result = await manager.check_for_updates(force=True)
 
     assert result["update_available"] is False
     assert result["latest_version"] == "1.5.6"
+
+
+@pytest.mark.anyio
+async def test_check_for_updates_rate_limit_fallback() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "api.github.com" in url:
+            return httpx.Response(403, json={"message": "API rate limit exceeded"})
+        if "github.com/camezaro-intc/Verifyarr/releases/latest" in url:
+            return httpx.Response(
+                302,
+                headers={"Location": "https://github.com/camezaro-intc/Verifyarr/releases/tag/v1.6.11"},
+            )
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        manager = UpdateManager(
+            current_version="1.5.6",
+            repo_api_url="https://api.github.com/mock/releases/latest",
+            http_client=client,
+        )
+        result = await manager.check_for_updates(force=True)
+
+    assert result["update_available"] is True
+    assert result["latest_version"] == "1.6.11"
+    assert "v1.6.11/Verifyarr-windows-x64.zip" in result["download_url"]
 
 
 def test_apply_update_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -160,12 +187,12 @@ def test_apply_update_workflow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         assert "nssm start Verifyarr" in script_text
         assert "Copy-Item" in script_text
 
-        # Verify subprocess.Popen was called with detached flag
+        # Verify subprocess.Popen was called with new process group flag
         assert mock_popen.called
         cmd_args, kwargs = mock_popen.call_args
         if os.name == "nt":
             flags = kwargs.get("creationflags", 0)
-            assert bool(flags & 0x00000008)
+            assert bool(flags & 0x00000200)
 
 
 def test_system_update_endpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

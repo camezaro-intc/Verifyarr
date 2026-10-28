@@ -456,6 +456,35 @@
     .trace-terminal-box {
       min-height: 260px;
     }
+    .trace-modal-card { position: relative; }
+
+    /* Floating "New logs" pill (smart auto-scroll pinning) */
+    .scroll-pill {
+      position: absolute;
+      bottom: 64px;
+      right: 24px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      border-radius: 9999px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+      transition: background .15s ease;
+      animation: scroll-pill-bounce 1s infinite;
+    }
+    .scroll-pill:hover { background: #3b82f6; }
+    .scroll-pill.hidden { display: none !important; }
+    @keyframes scroll-pill-bounce {
+      0%, 100% { transform: translateY(-15%); }
+      50% { transform: translateY(0); }
+    }
     .trace-terminal-box::-webkit-scrollbar { width: 8px; }
     .trace-terminal-box::-webkit-scrollbar-track { background: #090d16; }
     .trace-terminal-box::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
@@ -767,6 +796,9 @@
           </div>
         </div>
 
+        <!-- Floating "New logs" pill, shown when scrolled up and fresh entries arrive -->
+        <button type="button" id="btn-scroll-bottom" class="hidden scroll-pill"><span>↓ New logs</span></button>
+
         <!-- Pinned, Non-Scrolling Footer -->
         <div class="trace-modal-footer">
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -897,6 +929,8 @@
       modal.style.display = 'flex';
       _activeTraceFilter = 'ALL';
       _cachedTraceEvents = [];
+      const scrollPill = document.getElementById('btn-scroll-bottom');
+      if (scrollPill) scrollPill.classList.add('hidden');
 
       // Reset filter pills
       document.querySelectorAll('.trace-filter-pill').forEach(btn => {
@@ -927,7 +961,8 @@
           releaseEl.textContent = data.release_name || '';
         }
 
-        renderTraceEvents();
+        // Initial batch: start pinned to the very bottom and reset the pill
+        renderTraceEvents(true);
       } catch (err) {
         if (terminal) {
           terminal.innerHTML = `<div style="padding: 30px 20px; text-align: center; color: #ef4444;">✗ Error loading trace logs: ${escapeHtml(err.message)}</div>`;
@@ -952,10 +987,10 @@
       _activeTraceFilter = filterName;
       document.querySelectorAll('.trace-filter-pill').forEach(b => b.classList.remove('active'));
       if (btn) btn.classList.add('active');
-      renderTraceEvents();
+      renderTraceEvents(true);
     }
 
-    function renderTraceEvents() {
+    function renderTraceEvents(forceBottom = false) {
       const terminal = document.getElementById('trace-terminal-output');
       const countEl = document.getElementById('trace-event-count');
       const container = document.getElementById('correlated-logs-terminal') || document.getElementById('trace-terminal-container');
@@ -1028,11 +1063,40 @@
         `;
       }
 
+      const btnScrollBottom = document.getElementById('btn-scroll-bottom');
+      const wasAtBottom = forceBottom || !container || isTerminalAtBottom(container);
       terminal.innerHTML = html;
       if (container) {
-        container.scrollTop = container.scrollHeight;
+        if (wasAtBottom) {
+          container.scrollTop = container.scrollHeight;
+          if (btnScrollBottom) btnScrollBottom.classList.add('hidden');
+        } else if (btnScrollBottom) {
+          btnScrollBottom.classList.remove('hidden');
+        }
       }
     }
+
+    // Smart auto-scroll pinning: only follow new content if the user was already at the bottom.
+    function isTerminalAtBottom(terminal) {
+      return (terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight) <= 50;
+    }
+
+    function initScrollPill(terminalId) {
+      const terminal = document.getElementById(terminalId);
+      const btnScrollBottom = document.getElementById('btn-scroll-bottom');
+      if (!terminal || !btnScrollBottom) return;
+      terminal.addEventListener('scroll', () => {
+        if (isTerminalAtBottom(terminal)) {
+          btnScrollBottom.classList.add('hidden');
+        }
+      });
+      btnScrollBottom.addEventListener('click', () => {
+        terminal.scrollTo({ top: terminal.scrollHeight, behavior: 'smooth' });
+        btnScrollBottom.classList.add('hidden');
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => initScrollPill('correlated-logs-terminal'));
 
     function copyTraceLogs() {
       if (!_cachedTraceEvents || !_cachedTraceEvents.length) {

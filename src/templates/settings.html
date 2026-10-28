@@ -346,6 +346,34 @@
     .log-line.log-passed .log-badge {
       background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);
     }
+    /* Floating "New logs" pill (smart auto-scroll pinning) */
+    .scroll-pill {
+      position: absolute;
+      bottom: 16px;
+      right: 24px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      background: #2563eb;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      border: none;
+      border-radius: 9999px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+      cursor: pointer;
+      transition: background .15s ease;
+      animation: scroll-pill-bounce 1s infinite;
+    }
+    .scroll-pill:hover { background: #3b82f6; }
+    .scroll-pill.hidden { display: none !important; }
+    @keyframes scroll-pill-bounce {
+      0%, 100% { transform: translateY(-15%); }
+      50% { transform: translateY(0); }
+    }
+
     .log-placeholder {
       color: var(--muted); text-align: center; padding: 60px 20px; font-style: italic;
     }
@@ -841,10 +869,13 @@
           <div class="terminal-title" id="terminal-stats-title">Showing 0 lines</div>
           <button type="button" class="terminal-clear-btn" onclick="clearTerminalView()" title="Clear view">Clear</button>
         </div>
-        <div id="log-console-container" class="max-h-[480px] overflow-y-auto font-mono text-xs bg-black/60 rounded-xl p-3 log-terminal-body" tabindex="0">
-          <div id="log-lines-output">
-            <div class="log-placeholder">Loading system logs...</div>
+        <div style="position: relative;">
+          <div id="log-console-container" class="max-h-[480px] overflow-y-auto font-mono text-xs bg-black/60 rounded-xl p-3 log-terminal-body" tabindex="0">
+            <div id="log-lines-output">
+              <div class="log-placeholder">Loading system logs...</div>
+            </div>
           </div>
+          <button type="button" id="btn-scroll-bottom" class="hidden scroll-pill"><span>↓ New logs</span></button>
         </div>
       </div>
     </div>
@@ -1473,6 +1504,11 @@
         return;
       }
 
+      // Capture scroll position BEFORE touching the DOM (smart auto-scroll pinning)
+      const isAtBottom = !consoleContainer || isTerminalAtBottom(consoleContainer);
+      const prevScrollTop = consoleContainer ? consoleContainer.scrollTop : 0;
+      const prevHtml = outputEl.innerHTML;
+
       let html = '';
       for (const line of filtered) {
         const raw = line.raw || line.message || '';
@@ -1510,11 +1546,40 @@
 
       outputEl.innerHTML = html;
 
-      // Automatically scroll #log-console-container to bottom on new data
       if (consoleContainer) {
-        consoleContainer.scrollTop = consoleContainer.scrollHeight;
+        const btnScrollBottom = document.getElementById('btn-scroll-bottom');
+        if (isAtBottom) {
+          consoleContainer.scrollTop = consoleContainer.scrollHeight;
+          if (btnScrollBottom) btnScrollBottom.classList.add('hidden');
+        } else {
+          // Keep the user's reading position and hint that fresh logs may be below
+          consoleContainer.scrollTop = prevScrollTop;
+          if (btnScrollBottom && html !== prevHtml) btnScrollBottom.classList.remove('hidden');
+        }
       }
     }
+
+    // Smart auto-scroll pinning: only follow new content if the user was already at the bottom.
+    function isTerminalAtBottom(terminal) {
+      return (terminal.scrollHeight - terminal.scrollTop - terminal.clientHeight) <= 50;
+    }
+
+    function initScrollPill(terminalId) {
+      const terminal = document.getElementById(terminalId);
+      const btnScrollBottom = document.getElementById('btn-scroll-bottom');
+      if (!terminal || !btnScrollBottom) return;
+      terminal.addEventListener('scroll', () => {
+        if (isTerminalAtBottom(terminal)) {
+          btnScrollBottom.classList.add('hidden');
+        }
+      });
+      btnScrollBottom.addEventListener('click', () => {
+        terminal.scrollTo({ top: terminal.scrollHeight, behavior: 'smooth' });
+        btnScrollBottom.classList.add('hidden');
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => initScrollPill('log-console-container'));
 
     // 4. Set up an interval to poll every 3 seconds, with the "Pause Poll" button toggling the interval on/off.
     function startPolling() {
